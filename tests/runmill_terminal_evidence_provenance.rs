@@ -175,7 +175,7 @@ impl Fixture {
             get_run_snapshot_id: Uuid::nil(),
             event_page_snapshot_id: Uuid::nil(),
             lease_owner: "reactor:terminal-evidence-test".into(),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
             issued_at: Utc::now().trunc_subsecs(0),
             signer,
         };
@@ -942,7 +942,7 @@ async fn terminal_evidence_bundles_are_exactly_bound_and_strictly_append_only() 
             .expect("the retained bundle is readable");
     assert_eq!(retained_digest, bundle.terminal_bundle_digest);
     assert_eq!(retained_seq, TERMINAL_EVENT_SEQ);
-    assert!(stored_at <= Utc::now());
+    assert!(stored_at <= Utc::now().trunc_subsecs(6));
 
     // The same durable fact cannot be retained twice, and neither control
     // snapshot can back a second bundle.
@@ -1402,7 +1402,7 @@ async fn claimed_retention_job(
 ) -> ClaimedWorkflowJob {
     let job_id = Uuid::now_v7();
     let lease_owner = "reactor:terminal-evidence-activity".to_owned();
-    let lease_expires_at = Utc::now() + Duration::minutes(5);
+    let lease_expires_at = Utc::now().trunc_subsecs(6) + Duration::minutes(5);
     let payload = json!({
         "schema": "asf.runmill-terminal-evidence/v1",
         "bundle_id": bundle_id,
@@ -1460,7 +1460,7 @@ async fn claimed_retention_job(
         fence_token: 1,
         lease_owner,
         lease_expires_at,
-        created_at: Utc::now(),
+        created_at: Utc::now().trunc_subsecs(6),
     }
 }
 

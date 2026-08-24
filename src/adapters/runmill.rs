@@ -673,6 +673,8 @@ fn idempotency_conflict<T: Serialize>(
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::collections::BTreeSet;
 
     use chrono::{Duration, Utc};
@@ -707,7 +709,7 @@ mod tests {
     use super::{InMemoryRunmillGateway, RunmillMcpAdapter};
 
     fn signed_work_order(idempotency_key: &str, objective: &str) -> SignedWorkOrder {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let payload = WorkOrderV1 {
             schema: WORK_ORDER_SCHEMA_V1.into(),
             work_order_id: WorkOrderId::new(),
@@ -790,7 +792,7 @@ mod tests {
     }
 
     fn product_event(run_id: crate::domain::RunId, aggregate_version: u64) -> ProductEvent {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         ProductEvent {
             schema: PRODUCT_EVENT_SCHEMA_V1.into(),
             event_id: crate::domain::EventId::new(),
@@ -954,7 +956,7 @@ mod tests {
                 wall_time_seconds: 1,
             },
             stop_reason: "target_satisfied".into(),
-            produced_at: Utc::now(),
+            produced_at: Utc::now().trunc_subsecs(6),
         };
         SignedEvidenceBundle::sign(payload, &Ed25519Signer::generate("worker-test")).unwrap()
     }
@@ -1071,7 +1073,7 @@ mod tests {
             run_id: receipt.run_id,
             idempotency_key: "cancel-1".into(),
             reason: "operator request".into(),
-            requested_at: Utc::now(),
+            requested_at: Utc::now().trunc_subsecs(6),
         };
         assert_eq!(
             fake.cancel_run(&cancel).await.unwrap().disposition,
@@ -1109,7 +1111,7 @@ mod tests {
             run_id: receipt.run_id,
             idempotency_key: "ack-1".into(),
             evidence_digest: evidence.payload_digest,
-            acknowledged_at: Utc::now(),
+            acknowledged_at: Utc::now().trunc_subsecs(6),
         };
         assert_eq!(
             fake.acknowledge_outcome(&acknowledge)

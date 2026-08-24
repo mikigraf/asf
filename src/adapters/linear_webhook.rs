@@ -267,6 +267,8 @@ fn parse_delivery_id(value: &str) -> Result<Uuid, LinearWebhookError> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use hmac::Mac as _;
     use serde_json::json;
 
@@ -275,7 +277,7 @@ mod tests {
     const SECRET: &str = "fixture-linear-webhook-secret";
 
     fn millisecond_now() -> DateTime<Utc> {
-        DateTime::from_timestamp_millis(Utc::now().timestamp_millis())
+        DateTime::from_timestamp_millis(Utc::now().trunc_subsecs(6).timestamp_millis())
             .expect("current timestamp fits")
     }
 
@@ -366,7 +368,7 @@ mod tests {
                     timestamp: "0",
                     raw_body: malformed,
                 },
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             ),
             Err(LinearWebhookError::InvalidSignature)
         );

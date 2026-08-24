@@ -1694,6 +1694,8 @@ fn database_error(context: &str, error: &impl fmt::Display) -> Error {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::collections::{BTreeSet, VecDeque};
 
     use chrono::TimeDelta;
@@ -1718,7 +1720,7 @@ mod tests {
         revision: &str,
         objective: &str,
     ) -> SourceSnapshot {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         SourceSnapshot::create(
             tenant_id,
             repository_id,
@@ -1897,7 +1899,7 @@ mod tests {
     }
 
     fn claimed_job(tenant_id: TenantId, id: Uuid) -> ClaimedWorkflowJob {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         ClaimedWorkflowJob {
             id,
             tenant_id: tenant_id.as_uuid(),
@@ -2243,7 +2245,7 @@ mod tests {
         .await
         .expect("accept work");
         let anchor_escalation_id = Uuid::now_v7();
-        let anchor_deadline = Utc::now() + TimeDelta::hours(1);
+        let anchor_deadline = Utc::now().trunc_subsecs(6) + TimeDelta::hours(1);
         sqlx::query(
             r"
             INSERT INTO escalations (
@@ -2405,7 +2407,7 @@ mod tests {
     #[test]
     fn core_validator_allows_a_missing_opt_in_label_but_the_sync_wrapper_requires_it() {
         let tenant_id = TenantId::new();
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let content = SourceSnapshotContent {
             source: SourceSystem::Linear,
             external_id: "ASF-unlabeled".into(),
@@ -2682,7 +2684,7 @@ mod tests {
                 &first,
                 "correlation-discover",
                 IntakeProvenance::System(SystemIntakeActor::IntakeSync),
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             )
             .await
             .expect("persist discovered snapshot");
@@ -2709,7 +2711,7 @@ mod tests {
                 &second,
                 "correlation-requeue",
                 IntakeProvenance::ApiCaller(&caller),
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             )
             .await
             .expect("persist readiness-requeued snapshot under API-caller provenance");
@@ -2726,7 +2728,7 @@ mod tests {
                 &second,
                 "correlation-retry",
                 IntakeProvenance::System(SystemIntakeActor::IntakeSync),
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             )
             .await
             .expect("adopt retried snapshot idempotently");
@@ -2768,7 +2770,7 @@ mod tests {
             "local_reviewer": "claude:local-reviewer",
             "pr_reviewer": "codex:pr-reviewer"
         }))
-        .bind(Utc::now())
+        .bind(Utc::now().trunc_subsecs(6))
         .execute(&mut *transaction)
         .await
         .expect("ready work item for authority-reevaluation fixture");
@@ -2782,12 +2784,12 @@ mod tests {
         )
         .bind(tenant_id.as_uuid())
         .bind(discovered.work_item_id)
-        .bind(Utc::now())
+        .bind(Utc::now().trunc_subsecs(6))
         .execute(&mut *transaction)
         .await
         .expect("accept work item for authority-reevaluation fixture");
         let anchor_escalation_id = Uuid::now_v7();
-        let anchor_deadline = Utc::now() + TimeDelta::hours(1);
+        let anchor_deadline = Utc::now().trunc_subsecs(6) + TimeDelta::hours(1);
         sqlx::query(
             r"
             INSERT INTO escalations (
@@ -2843,7 +2845,7 @@ mod tests {
                 &third,
                 "correlation-reevaluate",
                 IntakeProvenance::System(SystemIntakeActor::IntakeSync),
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             )
             .await
             .expect("persist authority-reevaluation-required snapshot");
@@ -2861,7 +2863,7 @@ mod tests {
                 &third,
                 "correlation-reevaluate-retry",
                 IntakeProvenance::System(SystemIntakeActor::IntakeSync),
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             )
             .await
             .expect("adopt retried authority-reevaluation snapshot idempotently");

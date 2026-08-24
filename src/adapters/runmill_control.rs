@@ -4308,6 +4308,8 @@ fn valid_media_type(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::{
         fs::Permissions,
         io::Write as _,
@@ -5408,7 +5410,7 @@ mod tests {
         use crate::contracts::RunmillWorkOrderV1;
         use crate::crypto::Ed25519Signer;
 
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let signer = Ed25519Signer::generate("key-1");
         let verifying_key = signer.verifying_key();
 

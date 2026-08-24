@@ -64,11 +64,13 @@ pub fn validate_accountability(
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use super::*;
 
     #[test]
     fn accepted_work_without_anchor_is_a_defect() {
-        let accepted_at = Utc::now();
+        let accepted_at = Utc::now().trunc_subsecs(6);
         assert!(validate_accountability(WorkItemState::Accepted, Some(accepted_at), None).is_err());
         assert!(validate_accountability(WorkItemState::Discovered, None, None).is_ok());
         assert!(validate_accountability(WorkItemState::WaitingDependency, None, None).is_ok());
@@ -77,7 +79,7 @@ mod tests {
 
     #[test]
     fn accepted_cancellation_requires_a_terminal_anchor() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let item_id = WorkItemId::new();
         let mut anchor = AccountabilityAnchor {
             work_item_id: item_id,

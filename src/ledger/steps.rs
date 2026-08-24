@@ -2536,6 +2536,8 @@ fn summarize_error(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Duration;
     use serde_json::json;
 
@@ -2622,7 +2624,7 @@ mod tests {
             payload: json!({}),
             idempotency_key: "step-job".into(),
             priority: 0,
-            available_at: Utc::now(),
+            available_at: Utc::now().trunc_subsecs(6),
             max_attempts: 3,
         }
     }
@@ -2635,7 +2637,7 @@ mod tests {
             timer_key: "timer".into(),
             timer_type: "continue".into(),
             activity_contract_id: "test.activity/continue/v1".into(),
-            due_at: Utc::now(),
+            due_at: Utc::now().trunc_subsecs(6),
             payload: json!({}),
             generation: 1,
         }
@@ -2679,7 +2681,7 @@ mod tests {
             before_digest: None,
             after_digest: None,
             details: json!({"job_id": fence.job_id}),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
         };
 
         let event = canonical_step_audit_event(&fence, &audit, Some(previous_hash.clone()))
@@ -2780,7 +2782,7 @@ mod tests {
             request_digest,
             request_payload,
             runmill_submission: None,
-            next_attempt_at: Utc::now(),
+            next_attempt_at: Utc::now().trunc_subsecs(6),
         };
         assert!(validate_step_effect_intent(&effect, fence.tenant_id, fence.work_item_id).is_err());
 
@@ -2825,7 +2827,7 @@ mod tests {
         let workflow_id = Uuid::now_v7();
         let job_id = Uuid::now_v7();
         let next_job_id = Uuid::now_v7();
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let policy_digest = digest('b');
 
         sqlx::query("INSERT INTO tenants (id, slug, display_name) VALUES ($1, $2, $3)")

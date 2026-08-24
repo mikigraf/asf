@@ -142,6 +142,8 @@ fn valid_https_url(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::collections::BTreeSet;
 
     use super::*;
@@ -174,7 +176,7 @@ mod tests {
                 successful_ci_contexts: BTreeSet::from(["build".into()]),
             },
             provider_revision: "github:pull-request:7:revision".into(),
-            observed_at: Utc::now(),
+            observed_at: Utc::now().trunc_subsecs(6),
         }
     }
 

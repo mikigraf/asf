@@ -2168,6 +2168,8 @@ fn expiry_sweep_idempotency_key(reservation_set_id: Uuid, current_fence: i64) ->
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::str::FromStr as _;
 
     use chrono::Duration;
@@ -2212,7 +2214,7 @@ mod tests {
                 wall_time_seconds: 60,
                 external_api_calls: 5,
             },
-            expires_at: Utc::now() + Duration::hours(1),
+            expires_at: Utc::now().trunc_subsecs(6) + Duration::hours(1),
             actor_id: "scheduler:test".into(),
             idempotency_key: "admission:test:1".into(),
         }

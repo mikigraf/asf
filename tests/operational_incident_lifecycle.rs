@@ -6,6 +6,7 @@ use asf::{
     domain::TenantId,
     ledger::{NewWorkflowJob, OperationalIncidentStatus, OperationalIncidentTransition, PgLedger},
 };
+use chrono::SubsecRound as _;
 use chrono::Utc;
 use serde_json::json;
 use sqlx::{PgPool, Row as _};
@@ -77,7 +78,7 @@ async fn insert_owned_dead_job(ledger: &PgLedger, tenant_id: Uuid) -> (Uuid, Uui
             payload: json!({"scope": "tenant"}),
             idempotency_key: format!("incident-lifecycle-job:{job_id}"),
             priority: 0,
-            available_at: Utc::now(),
+            available_at: Utc::now().trunc_subsecs(6),
             max_attempts: 1,
         })
         .await
@@ -898,7 +899,7 @@ async fn live_resolved_incident_leaves_history_but_not_active_attention_when_con
             payload: json!({"scope": "tenant"}),
             idempotency_key: format!("incident-orphan-job:{orphan_job_id}"),
             priority: 0,
-            available_at: Utc::now(),
+            available_at: Utc::now().trunc_subsecs(6),
             max_attempts: 1,
         })
         .await

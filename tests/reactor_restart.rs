@@ -1,3 +1,4 @@
+use chrono::SubsecRound as _;
 use std::{
     collections::BTreeSet,
     sync::{
@@ -425,8 +426,8 @@ fn claimed_job(job_type: &str) -> ClaimedWorkflowJob {
         max_attempts: 5,
         fence_token: 1,
         lease_owner: "deterministic-reactor".into(),
-        lease_expires_at: Utc::now() + ChronoDuration::minutes(1),
-        created_at: Utc::now(),
+        lease_expires_at: Utc::now().trunc_subsecs(6) + ChronoDuration::minutes(1),
+        created_at: Utc::now().trunc_subsecs(6),
     }
 }
 
@@ -452,7 +453,7 @@ fn job(tenant_id: Uuid, job_type: &str, idempotency_key: String) -> NewWorkflowJ
         payload: json!({"test": "reactor-restart"}),
         idempotency_key,
         priority: 0,
-        available_at: Utc::now() - ChronoDuration::seconds(1),
+        available_at: Utc::now().trunc_subsecs(6) - ChronoDuration::seconds(1),
         max_attempts: 5,
     }
 }
@@ -955,7 +956,7 @@ async fn live_transactional_handler_keeps_progress_while_heartbeat_waits_on_its_
             payload: json!({"scope": "heartbeat-lock"}),
             idempotency_key: format!("heartbeat-lock:{job_id}"),
             priority: 0,
-            available_at: Utc::now() - ChronoDuration::seconds(1),
+            available_at: Utc::now().trunc_subsecs(6) - ChronoDuration::seconds(1),
             max_attempts: 2,
         })
         .await
@@ -1040,7 +1041,7 @@ async fn live_expired_final_attempt_after_handler_panic_is_reclaimed_into_owned_
             payload: json!({"scope": "panic-recovery"}),
             idempotency_key: format!("panic-recovery:{job_id}"),
             priority: 0,
-            available_at: Utc::now() - ChronoDuration::seconds(1),
+            available_at: Utc::now().trunc_subsecs(6) - ChronoDuration::seconds(1),
             max_attempts: 1,
         })
         .await
@@ -1405,7 +1406,9 @@ async fn live_final_failure_is_atomically_owned_and_dead_lettered_when_configure
         row.try_get::<bool, _>("authority_or_effect_active")
             .unwrap()
     );
-    assert!(row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap() > Utc::now());
+    assert!(
+        row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap() > Utc::now().trunc_subsecs(6)
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM audit_events WHERE tenant_id = $1 AND action = 'WORKFLOW_JOB_EXHAUSTED'"
@@ -1465,7 +1468,7 @@ async fn live_tenant_job_exhaustion_is_an_atomic_operational_incident_when_confi
             payload: json!({"scope": "tenant"}),
             idempotency_key: format!("operational-final-failure:{job_id}"),
             priority: 0,
-            available_at: Utc::now() - ChronoDuration::seconds(1),
+            available_at: Utc::now().trunc_subsecs(6) - ChronoDuration::seconds(1),
             max_attempts: 1,
         })
         .await
@@ -1571,7 +1574,9 @@ async fn live_tenant_job_exhaustion_is_an_atomic_operational_incident_when_confi
         row.try_get::<bool, _>("authority_or_effect_active")
             .unwrap()
     );
-    assert!(row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap() > Utc::now());
+    assert!(
+        row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap() > Utc::now().trunc_subsecs(6)
+    );
 
     let audit = sqlx::query(
         r"
@@ -1681,7 +1686,7 @@ async fn live_tenant_job_exhaustion_is_an_atomic_operational_incident_when_confi
             payload: json!({"scope": "tenant"}),
             idempotency_key: format!("naked-operational-dead-letter:{naked_job_id}"),
             priority: 0,
-            available_at: Utc::now(),
+            available_at: Utc::now().trunc_subsecs(6),
             max_attempts: 1,
         })
         .await

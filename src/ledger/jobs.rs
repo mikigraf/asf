@@ -794,6 +794,8 @@ pub(crate) fn is_valid_activity_contract_id(candidate: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use serde_json::json;
 
     use super::*;
@@ -816,7 +818,7 @@ mod tests {
             payload: json!({"work_item_id": Uuid::now_v7()}),
             idempotency_key: "work-item:advance:1".into(),
             priority: 10,
-            available_at: Utc::now(),
+            available_at: Utc::now().trunc_subsecs(6),
             max_attempts: 5,
         }
     }

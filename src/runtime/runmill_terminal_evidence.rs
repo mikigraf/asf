@@ -569,6 +569,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::{TimeDelta, Utc};
     use serde_json::json;
 
@@ -590,8 +592,8 @@ mod tests {
             max_attempts: 25,
             fence_token: 1,
             lease_owner: "reactor:terminal-evidence-test".into(),
-            lease_expires_at: Utc::now() + TimeDelta::minutes(5),
-            created_at: Utc::now(),
+            lease_expires_at: Utc::now().trunc_subsecs(6) + TimeDelta::minutes(5),
+            created_at: Utc::now().trunc_subsecs(6),
         }
     }
 

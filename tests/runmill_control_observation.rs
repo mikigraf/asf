@@ -1,5 +1,6 @@
 //! Live `PostgreSQL` coverage for the read-only Runmill observation provenance.
 
+use chrono::SubsecRound as _;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
@@ -108,7 +109,7 @@ impl Fixture {
             job_id: Uuid::now_v7(),
             observation_id: Uuid::now_v7(),
             lease_owner: "reactor:runmill-observation-test".into(),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
         };
         let repository_id = Uuid::now_v7();
         let snapshot_id = Uuid::now_v7();
@@ -403,7 +404,7 @@ impl Fixture {
         .bind(self.tenant_id)
         .bind(self.job_id)
         .bind(&workflow_job_owner)
-        .bind(Utc::now() + Duration::minutes(5))
+        .bind(Utc::now().trunc_subsecs(6) + Duration::minutes(5))
         .execute(ledger.pool())
         .await
         .expect("reclaim live Runmill observation job");

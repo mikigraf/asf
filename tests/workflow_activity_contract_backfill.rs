@@ -23,6 +23,7 @@
 //! seeded `workflow_jobs`/`workflow_timers` rows exercise exactly that
 //! drain: applying 0023 below fails with 55006 if it regresses.
 
+use chrono::SubsecRound as _;
 use std::env::VarError;
 
 use chrono::Utc;
@@ -255,7 +256,7 @@ async fn seed_pre_dispatch_fixture_with_baseline_job(
     let timer = Uuid::now_v7();
     let policy_digest = digest('1');
     let source_digest = digest('2');
-    let now = Utc::now();
+    let now = Utc::now().trunc_subsecs(6);
 
     let mut transaction = ledger
         .pool()

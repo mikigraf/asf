@@ -1,3 +1,4 @@
+use chrono::SubsecRound as _;
 use std::{str::FromStr as _, sync::Arc, time::Duration as StdDuration};
 
 use asf::{
@@ -329,7 +330,7 @@ impl Fixture {
             expected_worker_generation: 1,
             identities: identity_requests(),
             budget: budget_request(),
-            expires_at: Utc::now() + Duration::minutes(5),
+            expires_at: Utc::now().trunc_subsecs(6) + Duration::minutes(5),
             actor_id: "scheduler:integration-test".into(),
             idempotency_key: format!("{key}:{}", self.tenant_id),
         }
@@ -494,7 +495,7 @@ async fn admission_requires_and_persists_the_exact_live_worker_session_when_conf
 
     let mut too_long = fixture.request(0, "reservation-outlives-session");
     too_long.worker_session_id = replacement_session_id;
-    too_long.expires_at = Utc::now() + Duration::hours(2);
+    too_long.expires_at = Utc::now().trunc_subsecs(6) + Duration::hours(2);
     assert!(matches!(
         database
             .ledger
@@ -907,7 +908,7 @@ async fn reservations_are_atomic_race_safe_fenced_and_multidimensional_when_conf
     );
 
     let mut expiring = fixture.request(3, "expiring");
-    expiring.expires_at = Utc::now() + Duration::seconds(2);
+    expiring.expires_at = Utc::now().trunc_subsecs(6) + Duration::seconds(2);
     let expiring_receipt = database
         .ledger
         .acquire_admission_reservations(&expiring)
@@ -973,7 +974,7 @@ async fn elapsed_reservation_sweep_is_bounded_durable_and_race_safe_when_configu
         Err(Error::Validation(_))
     ));
 
-    let deadline = Utc::now() + Duration::seconds(2);
+    let deadline = Utc::now().trunc_subsecs(6) + Duration::seconds(2);
     let mut requests = Vec::new();
     let mut receipts = Vec::new();
     for index in 0..3 {
@@ -1063,7 +1064,7 @@ async fn elapsed_reservation_sweep_is_bounded_durable_and_race_safe_when_configu
 
     let mut recovered = requests.remove(2);
     recovered.reservation_set_id = Uuid::now_v7();
-    recovered.expires_at = Utc::now() + Duration::minutes(5);
+    recovered.expires_at = Utc::now().trunc_subsecs(6) + Duration::minutes(5);
     recovered.idempotency_key = format!("recovered:{}", fixture.tenant_id);
     let recovered = database
         .ledger
@@ -1093,7 +1094,7 @@ async fn expiry_sweep_internal_namespace_cannot_be_poisoned_or_starved_when_conf
     let fixture = Fixture::insert_with_worker_capacity(&database.ledger, 3, 3).await;
     raise_fixture_capacity(&database.ledger, &fixture, 3).await;
 
-    let deadline = Utc::now() + Duration::seconds(2);
+    let deadline = Utc::now().trunc_subsecs(6) + Duration::seconds(2);
     let mut first_target = fixture.request(0, "expiry-poison-target-one");
     first_target.expires_at = deadline;
     let first_target = database
@@ -1716,7 +1717,7 @@ async fn reactor_poll_durably_sweeps_elapsed_reservations_when_configured() {
     let database = ScopedDatabase::create(&database_url).await;
     let fixture = Fixture::insert(&database.ledger, 1).await;
     let mut request = fixture.request(0, "reactor-expiry");
-    request.expires_at = Utc::now() + Duration::seconds(2);
+    request.expires_at = Utc::now().trunc_subsecs(6) + Duration::seconds(2);
     let receipt = database
         .ledger
         .acquire_admission_reservations(&request)

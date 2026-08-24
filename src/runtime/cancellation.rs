@@ -3476,6 +3476,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::{
         collections::{BTreeSet, VecDeque},
         sync::{
@@ -3531,7 +3533,7 @@ mod tests {
             self.invocations.fetch_add(1, Ordering::SeqCst);
             Ok(ActivityOutcome::Retry {
                 error: "route-scope probe intentionally retried".into(),
-                retry_at: Utc::now() + Duration::seconds(1),
+                retry_at: Utc::now().trunc_subsecs(6) + Duration::seconds(1),
             })
         }
     }
@@ -3593,7 +3595,7 @@ mod tests {
                     effective_policy_digest: self.policy_digest.clone(),
                     signature_key_id: "key-1".into(),
                     signature_algorithm: "EdDSA".into(),
-                    accepted_at: Utc::now(),
+                    accepted_at: Utc::now().trunc_subsecs(6),
                 },
                 latest_sequence: state_version,
             }
@@ -3835,7 +3837,7 @@ mod tests {
             let work_order_digest = digest('c');
             let external_run_id = RunmillRunId::parse(format!("run_{}", run_id.simple()))
                 .expect("valid external run ID");
-            let lease_expires_at = Utc::now() + Duration::minutes(5);
+            let lease_expires_at = Utc::now().trunc_subsecs(6) + Duration::minutes(5);
             let mut transaction = ledger.pool().begin().await.expect("begin fixture");
 
             sqlx::query(
@@ -4094,7 +4096,7 @@ mod tests {
                 fence_token: 1,
                 lease_owner: "reactor:cancellation-test".into(),
                 lease_expires_at,
-                created_at: Utc::now(),
+                created_at: Utc::now().trunc_subsecs(6),
             };
             Self {
                 tenant_id,
@@ -4114,7 +4116,7 @@ mod tests {
 
         async fn insert_active_reservation(&self, ledger: &PgLedger) -> Uuid {
             let reservation_set_id = Uuid::now_v7();
-            let acquired_at = Utc::now();
+            let acquired_at = Utc::now().trunc_subsecs(6);
             let idempotency_key = format!("cancellation-reservation:{reservation_set_id}");
             let actor_id = "scheduler:cancellation-test";
             let mut transaction = ledger
@@ -4331,8 +4333,8 @@ mod tests {
             max_attempts: 5,
             fence_token: 1,
             lease_owner: "reactor:test".into(),
-            lease_expires_at: Utc::now() + Duration::minutes(1),
-            created_at: Utc::now(),
+            lease_expires_at: Utc::now().trunc_subsecs(6) + Duration::minutes(1),
+            created_at: Utc::now().trunc_subsecs(6),
         }
     }
 
@@ -4516,7 +4518,7 @@ mod tests {
         let invalid_job_id = Uuid::now_v7();
         let foreign_worker_id = WorkerId::new();
         let lease_owner = "reactor:crashed-invalid-cancellation-route";
-        let live_lease = Utc::now() + Duration::minutes(5);
+        let live_lease = Utc::now().trunc_subsecs(6) + Duration::minutes(5);
         let invalid_payload = json!({
             "work_item_id": fixture.work_item_id,
             "worker_id": foreign_worker_id,
@@ -5279,7 +5281,7 @@ mod tests {
             observer
                 .try_get::<chrono::DateTime<Utc>, _>("available_at")
                 .unwrap()
-                > Utc::now()
+                > Utc::now().trunc_subsecs(6)
         );
 
         // Keep the workflow accountability anchor live with an unrelated job
@@ -6805,7 +6807,7 @@ mod tests {
             )
             .await
             .expect("heartbeat-renew original cancellation job");
-        assert!(renewed_until > Utc::now() + Duration::minutes(20));
+        assert!(renewed_until > Utc::now().trunc_subsecs(6) + Duration::minutes(20));
 
         let replacement_id = Uuid::now_v7();
         sqlx::query(
@@ -6873,7 +6875,7 @@ mod tests {
         .expect("load live-owner-protected effect");
         assert_eq!(protected.0, "IN_FLIGHT");
         assert_eq!(protected.1, 1);
-        assert!(protected.2 <= Utc::now());
+        assert!(protected.2 <= Utc::now().trunc_subsecs(6));
         assert_eq!(protected.3, fixture.job.id);
 
         // The timestamp is not the ownership oracle in the other direction,
@@ -6933,7 +6935,7 @@ mod tests {
                 &fixture.job.lease_owner,
                 fixture.job.fence_token,
                 "preflight commit acknowledgement was lost",
-                Utc::now(),
+                Utc::now().trunc_subsecs(6),
             )
             .await
             .expect("move the old owner out of RUNNING");
@@ -7667,7 +7669,7 @@ mod tests {
             Some("effect_intents_identity_request_immutable")
         );
 
-        let opened_at = Utc::now();
+        let opened_at = Utc::now().trunc_subsecs(6);
         let escalation_id = Uuid::now_v7();
         let dead_letter_correlation = format!("workflow-job-exhausted:{}", fixture.job.id);
         let mut transaction = database
@@ -9575,7 +9577,7 @@ mod tests {
         let database = ScopedDatabase::create(&database_url).await;
         let fixture = LiveFixture::insert(&database.ledger).await;
         let escalation_id = Uuid::now_v7();
-        let opened_at = Utc::now();
+        let opened_at = Utc::now().trunc_subsecs(6);
         sqlx::query(
             r#"
             INSERT INTO escalations (
@@ -9810,7 +9812,7 @@ mod tests {
         let database = ScopedDatabase::create(&database_url).await;
         let fixture = LiveFixture::insert(&database.ledger).await;
         let escalation_id = Uuid::now_v7();
-        let opened_at = Utc::now();
+        let opened_at = Utc::now().trunc_subsecs(6);
         let original_evidence = json!(["provider-evidence:must-survive"]);
         sqlx::query(
             r"
@@ -10038,7 +10040,7 @@ mod tests {
         let fixture = LiveFixture::insert(&database.ledger).await;
         let reservation_set_id = fixture.insert_active_reservation(&database.ledger).await;
         let existing_escalation_id = Uuid::now_v7();
-        let existing_opened_at = Utc::now();
+        let existing_opened_at = Utc::now().trunc_subsecs(6);
         let existing_deadline = existing_opened_at + Duration::hours(12);
         sqlx::query(
             r"
@@ -10200,7 +10202,7 @@ mod tests {
         }
         let merged_deadline = row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap();
         assert!(merged_deadline < existing_deadline);
-        assert!(merged_deadline > Utc::now());
+        assert!(merged_deadline > Utc::now().trunc_subsecs(6));
         let path = row.try_get::<Value, _>("escalation_path").unwrap();
         assert!(path.as_array().unwrap().contains(&json!({
             "owner_type": "TEAM",
@@ -10540,7 +10542,10 @@ mod tests {
                     )
                 )))
         );
-        assert!(row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap() > Utc::now());
+        assert!(
+            row.try_get::<chrono::DateTime<Utc>, _>("deadline").unwrap()
+                > Utc::now().trunc_subsecs(6)
+        );
         assert!(
             row.try_get::<bool, _>("authority_or_effect_active")
                 .unwrap()

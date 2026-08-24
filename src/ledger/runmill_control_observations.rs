@@ -1104,6 +1104,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Utc;
     use serde_json::json;
 
@@ -1118,7 +1120,7 @@ mod tests {
             external_generation: 0,
             external_state_version: 1,
             external_latest_sequence: 1,
-            observed_at: Utc::now(),
+            observed_at: Utc::now().trunc_subsecs(6),
             admission: None,
             raw_response_bytes:
                 b"{\"ok\":true,\"data\":{\"z\":[true,1],\"events\":[],\"a\":{\"y\":\"x\"}}}\n"
@@ -1146,7 +1148,7 @@ mod tests {
             external_generation: 0,
             external_state_version: 1,
             external_latest_sequence: 1,
-            observed_at: Utc::now(),
+            observed_at: Utc::now().trunc_subsecs(6),
             admission: None,
             raw_response_bytes: valid_wire,
             raw_snapshot: raw_snapshot.clone(),
@@ -1179,7 +1181,7 @@ mod tests {
             external_event_id: "event-1".into(),
             sequence: 2,
             event_type: "run.progressed".into(),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
             raw_event: json!({"type": "run.progressed"}),
         };
         let raw_event = event.raw_event.clone();
@@ -1191,7 +1193,7 @@ mod tests {
             external_generation: 1,
             external_state_version: 1,
             external_latest_sequence: 1,
-            observed_at: Utc::now(),
+            observed_at: Utc::now().trunc_subsecs(6),
             admission: None,
             raw_response_bytes: format!(
                 "{{\"ok\":true,\"data\":{}}}\n",

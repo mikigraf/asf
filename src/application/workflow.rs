@@ -489,6 +489,8 @@ fn anchor(
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use super::*;
 
     fn observing(now: DateTime<Utc>) -> WorkflowState {
@@ -500,7 +502,7 @@ mod tests {
 
     #[test]
     fn every_run_stop_has_an_accountable_next_action() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let stops = vec![
             RunStop::EvidenceAvailable {
                 evidence_id: EvidenceId::new(),
@@ -546,7 +548,7 @@ mod tests {
 
     #[test]
     fn ambiguous_submission_reconciles_without_new_attempt() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut state = WorkflowState::accepted(WorkItemId::new(), now);
         state.stage = WorkflowStage::Dispatching;
         state.attempt_number = 1;

@@ -320,13 +320,15 @@ pub enum AttentionProjectionError {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Duration;
     use serde_json::json;
 
     use super::*;
 
     fn persisted() -> PersistedAttentionItem {
-        let opened_at = Utc::now();
+        let opened_at = Utc::now().trunc_subsecs(6);
         PersistedAttentionItem {
             kind: AttentionItemKind::Escalation,
             id: Uuid::now_v7(),

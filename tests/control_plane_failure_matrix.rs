@@ -11,6 +11,7 @@
 //! boundaries against public ASF APIs. CI runs it on Linux with a fresh
 //! `PostgreSQL` service as part of `cargo test --all-targets --all-features`.
 
+use chrono::SubsecRound as _;
 use std::collections::BTreeSet;
 
 use asf::{
@@ -104,7 +105,7 @@ impl RunFixture {
             run_id: Uuid::now_v7(),
             policy_digest: digest('a'),
             work_order_digest: digest('b'),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
         };
         let snapshot_id = Uuid::now_v7();
         let policy_id = Uuid::now_v7();

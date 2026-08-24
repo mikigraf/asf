@@ -925,6 +925,8 @@ fn database_error(context: &str, error: &impl fmt::Display) -> Error {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::time::Duration as StdDuration;
 
     use super::*;
@@ -991,8 +993,8 @@ mod tests {
             max_attempts: 3,
             fence_token: 1,
             lease_owner: "reactor:test".into(),
-            lease_expires_at: Utc::now() + chrono::Duration::minutes(5),
-            created_at: Utc::now(),
+            lease_expires_at: Utc::now().trunc_subsecs(6) + chrono::Duration::minutes(5),
+            created_at: Utc::now().trunc_subsecs(6),
         }
     }
 
@@ -1040,7 +1042,7 @@ mod tests {
 
     #[test]
     fn ready_requires_true_fresh_proofs_and_refusing_is_quarantined() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let ready = HealthObservation::from_result(Ok(ready_health_report(now)))
             .expect("valid production-ready observation");
         assert_eq!(ready.requested_status, "READY");
@@ -1134,7 +1136,7 @@ mod tests {
         let worker_id = WorkerId::new();
         let session_id = Uuid::now_v7();
         let job = claimed_job(tenant_id, worker_id);
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let capabilities = json!({
             "protocol_schema": "asf.control/v1",
             "work_order_schemas": ["asf.work-order/v1"],
@@ -1492,7 +1494,7 @@ mod tests {
         let tenant_id = TenantId::new();
         let worker_id = WorkerId::new();
         let mut job = claimed_job(tenant_id, worker_id);
-        job.lease_expires_at = Utc::now() + chrono::Duration::seconds(1);
+        job.lease_expires_at = Utc::now().trunc_subsecs(6) + chrono::Duration::seconds(1);
         let mut fixture = database.ledger.pool().begin().await.expect("begin fixture");
         sqlx::query("INSERT INTO tenants (id, slug, display_name) VALUES ($1, $2, $3)")
             .bind(tenant_id.as_uuid())

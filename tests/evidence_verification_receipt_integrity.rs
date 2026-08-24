@@ -1,3 +1,4 @@
+use chrono::SubsecRound as _;
 use std::env::VarError;
 
 use asf::{ledger::PgLedger, runtime::VERIFY_EVIDENCE_ACTIVITY_CONTRACT_ID};
@@ -397,7 +398,7 @@ async fn migration_0016_guards_exact_completion_receipt_shape_and_clock() {
         .await
         .expect("read database clock after exact completion");
     assert!(
-        completed_at > Utc::now() - Duration::minutes(1)
+        completed_at > Utc::now().trunc_subsecs(6) - Duration::minutes(1)
             && completed_at <= database_now
             && database_now - completed_at < Duration::seconds(5),
         "the completion trigger must replace caller time with the database clock"
@@ -426,20 +427,24 @@ async fn migration_0016_guards_exact_completion_receipt_shape_and_clock() {
         &fixture,
         duplicate_evidence_id,
         duplicate_run_id,
-        Utc::now(),
+        Utc::now().trunc_subsecs(6),
         &json!(["build", "build"]),
         &json!(["build"]),
     );
-    let duplicate_ci =
-        insert_valid_receipt_attack(&fixture, &database.ledger, duplicate_details, Utc::now())
-            .await;
+    let duplicate_ci = insert_valid_receipt_attack(
+        &fixture,
+        &database.ledger,
+        duplicate_details,
+        Utc::now().trunc_subsecs(6),
+    )
+    .await;
     assert_eq!(constraint(&duplicate_ci), Some(STRICT_RECEIPT_CONSTRAINT));
 
     let stale_details = receipt_details(
         &fixture,
         Uuid::now_v7(),
         Uuid::now_v7(),
-        Utc::now() - Duration::days(1),
+        Utc::now().trunc_subsecs(6) - Duration::days(1),
         &json!(["build"]),
         &json!(["build"]),
     );
@@ -447,7 +452,7 @@ async fn migration_0016_guards_exact_completion_receipt_shape_and_clock() {
         &fixture,
         &database.ledger,
         stale_details,
-        Utc::now() - Duration::days(1),
+        Utc::now().trunc_subsecs(6) - Duration::days(1),
     )
     .await;
     assert_eq!(constraint(&stale_clock), Some(RECEIPT_CLOCK_CONSTRAINT));

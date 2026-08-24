@@ -399,6 +399,8 @@ fn is_valid_sha256_digest(digest: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use super::*;
     use chrono::Duration;
 
@@ -421,7 +423,7 @@ mod tests {
             escalation_id: Uuid::now_v7(),
             owner_type: "TEAM".into(),
             owner_id: "platform-operations".into(),
-            deadline: Utc::now() + Duration::hours(4),
+            deadline: Utc::now().trunc_subsecs(6) + Duration::hours(4),
         }
     }
 

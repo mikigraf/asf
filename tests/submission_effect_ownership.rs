@@ -1,3 +1,4 @@
+use chrono::SubsecRound as _;
 use std::{sync::Arc, time::Duration as StdDuration};
 
 use async_trait::async_trait;
@@ -40,7 +41,7 @@ impl JobHandler for RetryDispatchHandler {
     ) -> Result<ActivityOutcome> {
         Ok(ActivityOutcome::Retry {
             error: "test handler leaves the obligation claimable".into(),
-            retry_at: Utc::now() + Duration::minutes(1),
+            retry_at: Utc::now().trunc_subsecs(6) + Duration::minutes(1),
         })
     }
 }
@@ -222,7 +223,7 @@ impl Fixture {
         let policy_digest = digest('1');
         let source_digest = digest('2');
         let lease_owner = "reactor:submission-effect-test".to_owned();
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut request_payload: serde_json::Value = serde_json::from_str(include_str!(
             "../contracts/fixtures/work-order-envelope-v1.json"
         ))
@@ -762,7 +763,8 @@ async fn migration_0008_upgrades_legacy_submission_states_and_reinstalls_termina
         let fixture = Fixture::insert(&database.ledger).await;
         let effect_id = Uuid::now_v7();
         let lease_owner = (status == "IN_FLIGHT").then_some(fixture.lease_owner.as_str());
-        let lease_expires_at = (status == "IN_FLIGHT").then_some(Utc::now() + Duration::minutes(5));
+        let lease_expires_at =
+            (status == "IN_FLIGHT").then_some(Utc::now().trunc_subsecs(6) + Duration::minutes(5));
         let observed_outcome = (status == "OBSERVED").then(|| {
             json!({
                 "schema": "asf.legacy-runmill-submission-receipt/v1",
@@ -1260,7 +1262,7 @@ async fn build_submission_effect_from_stored_work_order_with_fence_and_transacti
     };
 
     let effect_id = Uuid::now_v7();
-    let next_attempt_at = Utc::now() + Duration::minutes(1);
+    let next_attempt_at = Utc::now().trunc_subsecs(6) + Duration::minutes(1);
 
     let effect = asf::ledger::build_submission_effect_from_stored_work_order(
         &mut transaction,
@@ -1324,7 +1326,7 @@ async fn build_submission_effect_from_stored_work_order_with_fence_and_transacti
             before_digest: None,
             after_digest: None,
             details: json!({}),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
         }],
     };
 
@@ -1493,7 +1495,7 @@ async fn recovery_case_create_or_get_with_ambiguous_effect_and_worker_session() 
         escalation_id,
         owner_type: "TEAM".into(),
         owner_id: "platform-operations".into(),
-        deadline: Utc::now() + Duration::hours(4),
+        deadline: Utc::now().trunc_subsecs(6) + Duration::hours(4),
     };
 
     let case = database

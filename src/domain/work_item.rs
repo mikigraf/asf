@@ -344,13 +344,15 @@ impl WorkItem {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Utc;
 
     use super::*;
 
     #[test]
     fn cannot_skip_readiness_and_acceptance() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut item = WorkItem::discovered(TenantId::new(), SourceSnapshotId::new(), 50, now);
         assert!(item.transition(WorkItemState::Accepted, now).is_err());
         assert_eq!(item.state, WorkItemState::Discovered);
@@ -358,7 +360,7 @@ mod tests {
 
     #[test]
     fn failed_acceptance_is_atomic() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut item = WorkItem::discovered(TenantId::new(), SourceSnapshotId::new(), 50, now);
         item.state = WorkItemState::Ready;
         assert!(item.transition(WorkItemState::Accepted, now).is_err());

@@ -106,6 +106,8 @@ impl ApprovalRequest {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Duration;
 
     use super::*;
@@ -125,7 +127,7 @@ mod tests {
 
     #[test]
     fn any_bound_digest_change_invalidates_approval() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let original = binding();
         let request = ApprovalRequest {
             id: ApprovalId::new(),

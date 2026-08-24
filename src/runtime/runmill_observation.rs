@@ -1219,6 +1219,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::{
         sync::{
             Arc,
@@ -1625,7 +1627,7 @@ mod tests {
                 external_run_id: format!("run_{}", Uuid::now_v7().simple()),
                 observation_id: Uuid::now_v7(),
                 job_id: Uuid::now_v7(),
-                occurred_at: Utc::now(),
+                occurred_at: Utc::now().trunc_subsecs(6),
             };
             let repository_id = Uuid::now_v7();
             let source_snapshot_id = Uuid::now_v7();
@@ -2131,8 +2133,8 @@ mod tests {
             max_attempts: 3,
             fence_token: 1,
             lease_owner: "test-observer".into(),
-            lease_expires_at: Utc::now() + Duration::minutes(1),
-            created_at: Utc::now(),
+            lease_expires_at: Utc::now().trunc_subsecs(6) + Duration::minutes(1),
+            created_at: Utc::now().trunc_subsecs(6),
         }
     }
 
@@ -2228,8 +2230,8 @@ mod tests {
             max_attempts: 3,
             fence_token: 1,
             lease_owner: "test-observer".into(),
-            lease_expires_at: Utc::now() + Duration::minutes(5),
-            created_at: Utc::now(),
+            lease_expires_at: Utc::now().trunc_subsecs(6) + Duration::minutes(5),
+            created_at: Utc::now().trunc_subsecs(6),
         };
         let error = handler
             .execute(&job, ActivityControls::new(false))
@@ -2280,8 +2282,8 @@ mod tests {
             max_attempts: 3,
             fence_token: 1,
             lease_owner: lease_owner.into(),
-            lease_expires_at: Utc::now() + Duration::minutes(5),
-            created_at: Utc::now(),
+            lease_expires_at: Utc::now().trunc_subsecs(6) + Duration::minutes(5),
+            created_at: Utc::now().trunc_subsecs(6),
         };
         let payload = RunmillObservationPayload::parse(
             &job,
@@ -2707,7 +2709,7 @@ mod tests {
         .bind(rotated_observer_session_id)
         .bind(fixture.tenant_id)
         .bind(fixture.worker_id.as_uuid())
-        .bind(Utc::now() + Duration::hours(1))
+        .bind(Utc::now().trunc_subsecs(6) + Duration::hours(1))
         .execute(database.ledger.pool())
         .await
         .expect("insert the rotated live same-generation observer session");
@@ -3046,7 +3048,7 @@ mod tests {
         .bind(fixture.tenant_id)
         .bind(fixture.work_item_id)
         .bind(fixture.attempt_id)
-        .bind(Utc::now() + Duration::hours(4))
+        .bind(Utc::now().trunc_subsecs(6) + Duration::hours(4))
         .bind(format!(
             "preexisting-runmill-gap-escalation-{preexisting_escalation_id}"
         ))

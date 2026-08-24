@@ -992,6 +992,8 @@ fn derive_canonical_evidence(
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use super::*;
     use crate::crypto::canonical_json;
     use url::Url;
@@ -1098,8 +1100,8 @@ mod tests {
                 worker_id: Uuid::new_v4(),
                 worker_generation: 1,
                 worker_session_id: Uuid::new_v4(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().trunc_subsecs(6),
+                updated_at: Utc::now().trunc_subsecs(6),
             },
             proof: mock_proof(),
             local_run_id: Uuid::nil(),
@@ -1133,8 +1135,8 @@ mod tests {
                 worker_id: Uuid::new_v4(),
                 worker_generation: 1,
                 worker_session_id: Uuid::new_v4(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().trunc_subsecs(6),
+                updated_at: Utc::now().trunc_subsecs(6),
             },
             proof: mock_proof(),
             local_run_id: Uuid::new_v4(),
@@ -1168,8 +1170,8 @@ mod tests {
                 worker_id: Uuid::new_v4(),
                 worker_generation: 1,
                 worker_session_id: Uuid::new_v4(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().trunc_subsecs(6),
+                updated_at: Utc::now().trunc_subsecs(6),
             },
             proof: mock_proof(),
             local_run_id: Uuid::new_v4(),
@@ -1203,8 +1205,8 @@ mod tests {
                 worker_id: Uuid::new_v4(),
                 worker_generation: 1,
                 worker_session_id: Uuid::new_v4(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Utc::now().trunc_subsecs(6),
+                updated_at: Utc::now().trunc_subsecs(6),
             },
             proof: mock_proof(),
             local_run_id: Uuid::new_v4(),
@@ -1318,7 +1320,7 @@ mod tests {
             recovery_case_id: case_id,
             local_run_id,
             external_run_id: "external-run-123".to_string(),
-            adopted_at: Utc::now(),
+            adopted_at: Utc::now().trunc_subsecs(6),
         };
 
         assert_eq!(adoption.tenant_id, tenant_id);

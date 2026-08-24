@@ -238,6 +238,8 @@ fn validate_content(content: &AuditEventContent) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::TimeZone;
     use serde_json::json;
     use uuid::Uuid;
@@ -262,7 +264,7 @@ mod tests {
             after_digest: None,
             previous_event_hash: None,
             details: json!({"state": "ACCEPTED"}),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
         }
     }
 

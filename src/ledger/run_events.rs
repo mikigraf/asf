@@ -814,6 +814,8 @@ fn stale_generation_error(worker_id: Uuid, supplied: i64, current: i64) -> Error
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Duration;
     use serde_json::json;
 
@@ -891,7 +893,7 @@ mod tests {
             aggregate_version: 2,
             schema_version: PRODUCT_EVENT_SCHEMA_V1.into(),
             event_type: "run.progressed".into(),
-            occurred_at: Utc::now(),
+            occurred_at: Utc::now().trunc_subsecs(6),
             raw_event: json!({}),
         };
         assert!(event.validate().is_err());
@@ -917,7 +919,7 @@ mod tests {
         let worker_id = Uuid::now_v7();
         let worker_session_id = Uuid::now_v7();
         let run_id = Uuid::now_v7();
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let policy_digest = digest('a');
         let work_order_digest = digest('b');
 

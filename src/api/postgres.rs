@@ -4459,6 +4459,8 @@ fn database_error(context: &str, error: &sqlx::Error) -> Error {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::{collections::BTreeSet, sync::Arc};
 
     use async_trait::async_trait;
@@ -6336,7 +6338,7 @@ mod tests {
             cursor: None,
             limit: 2,
         };
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
 
         let critical_earlier_work = Uuid::now_v7();
         let critical_earlier = Uuid::now_v7();
@@ -6831,7 +6833,7 @@ mod tests {
             &external_id,
             "revision-1",
             "Ship the discovery replay contract",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
 
         // 1) First intake discovers a new work item.
@@ -7466,7 +7468,7 @@ mod tests {
             &format!("inactive-repo-external-{tenant_id}"),
             "revision-inactive-repo",
             "Attempt intake against an inactive repository",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         let error = assert_intake_rejected_without_residue(
             pool,
@@ -7491,7 +7493,7 @@ mod tests {
             &format!("foreign-repo-external-{tenant_id}"),
             "revision-foreign-repo",
             "Attempt intake against a foreign tenant repository",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         let error = assert_intake_rejected_without_residue(
             pool,
@@ -7516,7 +7518,7 @@ mod tests {
             &format!("missing-repo-external-{tenant_id}"),
             "revision-missing-repo",
             "Attempt intake against a missing repository",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         let error = assert_intake_rejected_without_residue(
             pool,
@@ -7541,7 +7543,7 @@ mod tests {
             &format!("wrong-schema-external-{tenant_id}"),
             "revision-wrong-schema",
             "Attempt intake with an unsupported schema version",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         request_wrong_schema.schema_version = "asf.api-intake-request/v0".into();
         let error = assert_intake_rejected_without_residue(
@@ -7567,7 +7569,7 @@ mod tests {
             &format!("credential-shaped-external-{tenant_id}"),
             "revision-credential-shaped",
             "Bearer intake-should-reject-this-credential-shaped-objective",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         let error = assert_intake_rejected_without_residue(
             pool,
@@ -7592,7 +7594,7 @@ mod tests {
             &format!("userinfo-url-external-{tenant_id}"),
             "revision-userinfo-url",
             "Attempt intake with a source URL containing embedded userinfo",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         request_userinfo_url.source_url = Some(
             url::Url::parse("https://intake-user:intake-pass@example.invalid/issue/1")
@@ -7622,7 +7624,7 @@ mod tests {
             &oversized_external_id,
             "revision-oversized-external-id",
             "Attempt intake with an oversized external identifier",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         let error = assert_intake_rejected_without_residue(
             pool,
@@ -7702,7 +7704,7 @@ mod tests {
         // version 2, stamped by the caller's two prior direct-intake calls) so a fixture that
         // no longer matches the assumed starting state fails loudly instead of silently
         // producing an unreachable ACCEPTED row.
-        let ready_at = Utc::now();
+        let ready_at = Utc::now().trunc_subsecs(6);
         let ready_version: i64 = sqlx::query_scalar(
             r"
             UPDATE work_items
@@ -7748,7 +7750,7 @@ mod tests {
              version 3"
         );
 
-        let accepted_at = Utc::now();
+        let accepted_at = Utc::now().trunc_subsecs(6);
         let accepted_version: i64 = sqlx::query_scalar(
             r"
             UPDATE work_items
@@ -7775,7 +7777,7 @@ mod tests {
         // The smallest escalation-backed accountability anchor the ACCEPTED invariant
         // requires: one open escalation owning one accountability-anchor row.
         let anchor_escalation_id = Uuid::now_v7();
-        let anchor_deadline = Utc::now() + Duration::hours(1);
+        let anchor_deadline = Utc::now().trunc_subsecs(6) + Duration::hours(1);
         sqlx::query(
             r"
             INSERT INTO escalations (
@@ -7855,7 +7857,7 @@ mod tests {
             &external_id,
             "revision-1",
             "Ship the authority-reevaluation contract",
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         );
         let receipt1 = backend
             .intake(&request1, &caller, key1)

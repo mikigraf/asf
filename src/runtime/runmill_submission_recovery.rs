@@ -597,6 +597,8 @@ fn is_lowercase_sha256_digest(digest: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use super::*;
     use crate::domain::RunId;
     use crate::ports::runmill::{
@@ -622,8 +624,8 @@ mod tests {
             worker_generation: 1,
             worker_session_id: Uuid::now_v7(),
             state: "PENDING_EXTERNAL_LOOKUP".into(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Utc::now().trunc_subsecs(6),
+            updated_at: Utc::now().trunc_subsecs(6),
         }
     }
 
@@ -664,7 +666,7 @@ mod tests {
             effective_policy_digest: String::new(),
             signature_key_id: String::new(),
             signature_algorithm: String::new(),
-            accepted_at: Utc::now(),
+            accepted_at: Utc::now().trunc_subsecs(6),
         }
     }
 
@@ -1282,7 +1284,7 @@ mod tests {
         worker_id: Uuid,
         worker_generation: u64,
     ) -> RunSnapshot {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         RunSnapshot {
             schema: RUN_SNAPSHOT_SCHEMA_V1.into(),
             run_id: RunId::new(),

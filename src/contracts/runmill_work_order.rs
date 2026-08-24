@@ -506,6 +506,8 @@ fn valid_remote_check(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::TimeDelta;
     use serde_json::json;
 
@@ -615,7 +617,7 @@ mod tests {
 
     #[test]
     fn exact_envelope_rejects_unknown_fields_tampering_and_widened_authority() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let signer = Ed25519Signer::generate("asf-control-v1");
         let envelope = RunmillSignedWorkOrderV1::sign(
             valid_payload(),

@@ -156,6 +156,8 @@ fn compare_due_date(left: Option<DateTime<Utc>>, right: Option<DateTime<Utc>>) -
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use super::*;
 
     fn candidate(now: DateTime<Utc>, priority: u8) -> SchedulingCandidate {
@@ -178,7 +180,7 @@ mod tests {
 
     #[test]
     fn bounded_aging_can_prevent_starvation() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut old = candidate(now - Duration::days(30), 50);
         let recent = candidate(now, 60);
         old.ready_at = now - Duration::days(30);
@@ -188,7 +190,7 @@ mod tests {
 
     #[test]
     fn blocked_candidates_are_explained_and_never_selected() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut blocked = candidate(now, 100);
         blocked.approvals_ready = false;
         let blocked_id = blocked.work_item_id;

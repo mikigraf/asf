@@ -1,3 +1,4 @@
+use chrono::SubsecRound as _;
 use std::{env::VarError, time::Duration as StdDuration};
 
 use chrono::{DateTime, Duration, Utc};
@@ -314,7 +315,7 @@ async fn repeatable_read_valid_receipt_serializes_with_a_concurrent_manifest_lin
     let tenant_id = Uuid::now_v7();
     let evidence_id = Uuid::now_v7();
     let manifest = required_manifest(true);
-    let created_at = Utc::now() - Duration::minutes(5);
+    let created_at = Utc::now().trunc_subsecs(6) - Duration::minutes(5);
     insert_evidence(&database.pool, tenant_id, evidence_id, &manifest).await;
 
     let artifact_ids = (0..manifest.len())
@@ -532,7 +533,7 @@ async fn link_identity_is_derived_and_claimed_identity_or_duplicate_digest_is_re
     let tenant_id = Uuid::now_v7();
     let evidence_id = Uuid::now_v7();
     let manifest = required_manifest(false);
-    let created_at = Utc::now() - Duration::minutes(5);
+    let created_at = Utc::now().trunc_subsecs(6) - Duration::minutes(5);
     insert_evidence(&database.pool, tenant_id, evidence_id, &manifest).await;
     let artifact_ids = [Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7()];
     for (artifact_id, artifact) in artifact_ids.iter().zip(&manifest) {
@@ -655,7 +656,7 @@ async fn valid_receipt_rejects_artifacts_created_after_its_verification_time() {
     let tenant_id = Uuid::now_v7();
     let evidence_id = Uuid::now_v7();
     let manifest = required_manifest(false);
-    let verification_time = Utc::now();
+    let verification_time = Utc::now().trunc_subsecs(6);
     insert_evidence(&database.pool, tenant_id, evidence_id, &manifest).await;
 
     for (position, artifact) in manifest.iter().enumerate() {

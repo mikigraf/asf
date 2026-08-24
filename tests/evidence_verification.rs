@@ -1,3 +1,4 @@
+use chrono::SubsecRound as _;
 use std::{
     collections::BTreeMap,
     sync::{
@@ -123,7 +124,7 @@ impl ArtifactStore for MemoryArtifactStore {
             size: bytes.len() as u64,
             producer: producer.to_owned(),
             retention_class: retention_class.to_owned(),
-            stored_at: Utc::now(),
+            stored_at: Utc::now().trunc_subsecs(6),
         })
     }
 
@@ -232,9 +233,9 @@ impl ForgeGateway for FakeForge {
             )]),
             provider_revision: "github:pr:42:head-a:ci-success".into(),
             observed_at: if matches!(self.mode, ForgeMode::StaleObservation) {
-                Utc::now() - Duration::minutes(6)
+                Utc::now().trunc_subsecs(6) - Duration::minutes(6)
             } else {
-                Utc::now()
+                Utc::now().trunc_subsecs(6)
             },
         })
     }
@@ -302,7 +303,7 @@ impl Fixture {
         let base_sha = "b".repeat(40);
         let candidate_sha = "a".repeat(40);
         let external_run_id = "run_01JVERIFY";
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let work_order_issued_at = now - Duration::minutes(evidence_age_minutes + 8);
         let work_order_not_before = now - Duration::minutes(evidence_age_minutes + 7);
         let run_completed_at = now - Duration::minutes(evidence_age_minutes + 1);

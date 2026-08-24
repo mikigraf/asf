@@ -1879,6 +1879,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use std::{collections::BTreeSet, sync::Arc};
 
     use chrono::{Duration, Utc};
@@ -2182,7 +2184,7 @@ mod tests {
             let expectation_digest = digest("evidence-expectation");
             let external_run_id = "run_01JTEST";
             let lease_owner = "reactor:source-close-test".to_owned();
-            let lease_expires_at = Utc::now() + Duration::minutes(20);
+            let lease_expires_at = Utc::now().trunc_subsecs(6) + Duration::minutes(20);
 
             let mut work_order: RunmillSignedWorkOrderV1 = serde_json::from_slice(include_bytes!(
                 "../../contracts/fixtures/work-order-envelope-v1.json"
@@ -2218,7 +2220,7 @@ mod tests {
                 .expect("canonicalize Work Order envelope");
             let work_order_envelope_digest = sha256_digest(&work_order_exact);
 
-            let evidence_issued_at = Utc::now() - Duration::minutes(3);
+            let evidence_issued_at = Utc::now().trunc_subsecs(6) - Duration::minutes(3);
             let mut bundle = SignedRunmillEvidenceBundle::from_json(include_bytes!(
                 "../../contracts/fixtures/runmill-signed-evidence-v1.json"
             ))
@@ -2313,8 +2315,8 @@ mod tests {
                 .to_utc()
                 .expect("evidence issuance timestamp");
 
-            let observed_at = Utc::now() - Duration::minutes(2);
-            let verified_at = Utc::now() - Duration::minutes(1);
+            let observed_at = Utc::now().trunc_subsecs(6) - Duration::minutes(2);
+            let verified_at = Utc::now().trunc_subsecs(6) - Duration::minutes(1);
             let verification = EvidenceVerificationReceiptV1 {
                 schema: EVIDENCE_VERIFICATION_RECEIPT_SCHEMA_V1.into(),
                 evidence_id: EvidenceId::from_uuid(evidence_id),
@@ -2841,7 +2843,7 @@ mod tests {
                 fence_token: 1,
                 lease_owner,
                 lease_expires_at,
-                created_at: Utc::now(),
+                created_at: Utc::now().trunc_subsecs(6),
             };
             Ok(Self {
                 tenant_id,
@@ -3025,7 +3027,7 @@ mod tests {
 
         async fn insert_active_reservation(&self, ledger: &PgLedger) -> Uuid {
             let reservation_set_id = Uuid::now_v7();
-            let acquired_at = Utc::now();
+            let acquired_at = Utc::now().trunc_subsecs(6);
             let idempotency_key = format!("source-close-reservation:{reservation_set_id}");
             let actor_id = "scheduler:source-close-test";
             let mut transaction = ledger
@@ -3157,7 +3159,7 @@ mod tests {
                 correlation_marker: request.effect.correlation_marker.clone(),
                 disposition: SourceCloseDisposition::Applied,
                 provider_revision: "linear:ASF-42:closed:1".into(),
-                recorded_at: Utc::now(),
+                recorded_at: Utc::now().trunc_subsecs(6),
             };
             state.applied = Some(receipt.clone());
             match self.mode {
@@ -4585,7 +4587,7 @@ mod tests {
         let request = CloseSourceRequest::new(
             stable_source_close_idempotency(fixture.work_item_id, fixture.evidence_id),
             effect,
-            Utc::now(),
+            Utc::now().trunc_subsecs(6),
         )
         .expect("build canonical source-close request");
         let request_digest = sha256_digest(

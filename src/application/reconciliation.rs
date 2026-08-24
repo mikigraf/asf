@@ -192,6 +192,8 @@ fn attempt_violation(code: InvariantCode, attempt: &Attempt, detail: &str) -> In
 
 #[cfg(test)]
 mod tests {
+    use chrono::SubsecRound as _;
+
     use chrono::Utc;
 
     use super::*;
@@ -199,7 +201,7 @@ mod tests {
 
     #[test]
     fn finds_orphaned_accepted_work() {
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(6);
         let mut item = WorkItem::discovered(TenantId::new(), SourceSnapshotId::new(), 50, now);
         item.state = WorkItemState::Accepted;
         item.accepted_at = Some(now);
