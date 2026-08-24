@@ -38,7 +38,7 @@ jobs:
       RUST_BACKTRACE: "1"
       ASF_TENANT_ID: 0198efb8-0000-7000-8000-000000000001
       ASF_DATABASE_URL: postgresql://asf:asf-ci-password@127.0.0.1:5432/asf
-      ASF_TEST_DATABASE_URL: postgresql://asf:asf-ci-password@127.0.0.1:5432/asf
+      ASF_TEST_DATABASE_URL: postgresql://asf:asf-ci-password@127.0.0.1:5432/asf_test
       ASF_BIND_ADDRESS: 127.0.0.1:8080
       ASF_ARTIFACT_ROOT: /tmp/asf-artifacts
       ASF_MIGRATIONS_DIR: ${{ github.workspace }}/migrations
@@ -72,13 +72,20 @@ jobs:
       - name: Lint all targets
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-      - name: Run tests, including live PostgreSQL failure paths
-        run: cargo test --locked --all-targets --all-features -- --test-threads=1
-
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      # Live tests write into their own database. Several of them create
+      # tenants in `public`, and a V1 deployment refuses to bind its
+      # configured tenant when a foreign one exists, so the migration smoke
+      # below must keep an untouched database of its own.
+      - name: Create the isolated live-test database
+        run: psql "$ASF_DATABASE_URL" --command "CREATE DATABASE asf_test OWNER asf"
+
+      - name: Run tests, including live PostgreSQL failure paths
+        run: cargo test --locked --all-targets --all-features -- --test-threads=1
 
       - name: Build runtime binaries
         run: cargo build --locked --bins
