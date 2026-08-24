@@ -1,0 +1,7 @@
+{
+  "seed_base64url_no_pad": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "public_key_base64url_no_pad": "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik",
+  "payload_digest": "sha256:c9301e745d2752010465f0ebe8b8f8da351ecd8d94d42ffe57513e75acf1a435",
+  "envelope_digest": "sha256:99cea24400142de24faa5cf70d96b47f508b278e991a53ccd41f9e53943a935f",
+  "signature": "base64url:P8TjB9gT-lT-_kSM9vIToyIbXlACRCWmxy9P4LioRQKxjcup_bwQN3NxMEivW7LYztUaVEwUe8xEEjLqwCCBCQ"
+}

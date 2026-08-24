@@ -1,0 +1,343 @@
+{
+  "schema": "asf.signed-evidence/v1",
+  "key_id": "runmill-worker-fixture",
+  "algorithm": "EdDSA",
+  "issued_at": "2026-08-21T10:20:00Z",
+  "bundle_digest": "sha256:ca899d64697afacf30fa1c723e132de81d213f9c9d113871802c3ea4280dc191",
+  "statement": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": [
+      {
+        "name": "github:acme/widgets",
+        "digest": {
+          "sha1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ],
+    "predicateType": "https://runmill.dev/attestations/asf-evidence/v1",
+    "predicate": {
+      "schema": "asf.evidence-bundle/v1",
+      "run": {
+        "run_id": "run_01JTEST",
+        "attempt_id": "018f0000-0000-7000-8000-000000000004",
+        "work_order_id": "018f0000-0000-7000-8000-000000000001",
+        "completed_at": "2026-08-21T10:19:00Z"
+      },
+      "work_order": {
+        "envelope_digest": "sha256:7771c3c360d122bd117a3bb1e91399d1163f230682a2a5818015aeb9d33a5641",
+        "payload_digest": "sha256:91c4fcf20fc49c6cf8c910d7ec4c1ac2b4ccd2fcb488323834806f0602e688ea",
+        "envelope_artifact_digest": "sha256:7771c3c360d122bd117a3bb1e91399d1163f230682a2a5818015aeb9d33a5641",
+        "signature": {
+          "key_id": "asf-work-order-fixture",
+          "algorithm": "EdDSA",
+          "verified": true
+        }
+      },
+      "policy": {
+        "effective_policy_digest": "sha256:ebd93ed579f0d38a0043a09ccf217eb564a784e4eee7513599d4815aeb853346",
+        "effective_policy_artifact_digest": "sha256:ebd93ed579f0d38a0043a09ccf217eb564a784e4eee7513599d4815aeb853346",
+        "inputs": {
+          "operator_policy_digest": "sha256:9ffd1a327183dbc027e4c4e1f0708ff9873141a16c44aa886dc637467cb5fb6a",
+          "work_order_policy_digest": "sha256:f84f6f5131fbe3686f35deb069a57b7fa7ce86010b862d11897515e16a067e86",
+          "repository_policy_digest": "sha256:34949db60f45a2ee95c3f74a45333941d564351461deb93c3d467e092f04ab56",
+          "forge_policy_digest": "sha256:aed140c974f82e866c8859653f7e120c3e29b4a6a2c89a4e4a79582f2e4012b4"
+        },
+        "required_local_checks": [
+          "lint"
+        ],
+        "required_ci_contexts": [
+          "ci/test"
+        ],
+        "require_local_review": true,
+        "require_pull_request_review": true
+      },
+      "source": {
+        "forge": "github",
+        "repository": "acme/widgets",
+        "base_ref": "refs/heads/main",
+        "base_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "merge_sha": null,
+        "tree_digest": "sha256:4d4b0facd58f3ce7596d35072a7d0b635231628c71228f07d3d08166494f6023",
+        "normalized_diff_digest": "sha256:f54fd1d171d5f40035e10c7a9be52da483853b9e356c2c8072024040746c0e91",
+        "normalized_diff_artifact_digest": "sha256:f54fd1d171d5f40035e10c7a9be52da483853b9e356c2c8072024040746c0e91",
+        "changed_paths": [
+          "src/lib.rs"
+        ]
+      },
+      "runtime": {
+        "harness_digest": "sha256:49f756463ad9dcfb9b6ade54d7d6f15476e7214f46a65b4b0c55d46845b12f70",
+        "tool_policy_digest": "sha256:5f1378ca34aab2aa91998743a793e4d3f4e517f124038c1e2a76cd5f3f488bdd",
+        "sandbox_profile_digest": "sha256:e3004dfe50aa5bcd71d17d2d12c951501216b4cd48abdec5f6b086c9a5bb5380",
+        "dependency_digest": "sha256:2188dfc2d889b53230f6891977d505642d718b940aa3eec23985afb379141dcd",
+        "runtime_digest": "sha256:d92c6a81b2ff50096bcda80885427d1f59a25b5f483f7055523504925d16ab23",
+        "runtime_manifest_digest": "sha256:d1f31e2a4a0eaa2114533d7cdc823814b559ce1977d3dd8ac959f27aa2622b30",
+        "providers": [
+          {
+            "role": "implementer",
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "principal_id": "implementer",
+            "lease_id": "lease-implementer"
+          },
+          {
+            "role": "local-reviewer",
+            "provider": "anthropic",
+            "model": "claude-opus-4.1",
+            "principal_id": "reviewer-local",
+            "lease_id": "lease-local"
+          },
+          {
+            "role": "pull-request-reviewer",
+            "provider": "anthropic",
+            "model": "claude-opus-4.1",
+            "principal_id": "reviewer-pr",
+            "lease_id": "lease-pr"
+          }
+        ]
+      },
+      "role_outcomes": [
+        {
+          "role": "implementer",
+          "outcome": "completed",
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "evidence_digest": "sha256:5acb884da709fecf0bb5356d4e6716c96718462fa7788de2f9210b266e1948ac"
+        },
+        {
+          "role": "local-reviewer",
+          "outcome": "passed",
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "evidence_digest": "sha256:634910fab27b10099958d2b194fa74140f80483251e0140af56e004874dfc3ab"
+        },
+        {
+          "role": "pull-request-reviewer",
+          "outcome": "passed",
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "evidence_digest": "sha256:24d8975e84e9db7810872c571a6fec25dc5eaaa5629ec9d1e5c8832b9757e606"
+        }
+      ],
+      "verification": {
+        "local_checks": [
+          {
+            "check_id": "lint",
+            "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tree_digest": "sha256:4d4b0facd58f3ce7596d35072a7d0b635231628c71228f07d3d08166494f6023",
+            "command_digest": "sha256:b1ee6959fdcb9e938eed6c58cc1bc34523c4673d1f22c7343b6200a2e845e064",
+            "executor_id": "executor-linux",
+            "toolchain_digest": "sha256:335ddbce02d068207f42ecdac988ee267eb014a7a1e7ffe8df7bedd66f716899",
+            "sandbox_profile_digest": "sha256:e3004dfe50aa5bcd71d17d2d12c951501216b4cd48abdec5f6b086c9a5bb5380",
+            "started_at": "2026-08-21T10:05:00Z",
+            "completed_at": "2026-08-21T10:10:00Z",
+            "conclusion": "success",
+            "coverage": "complete",
+            "evidence_digest": "sha256:371a305df442c5956fbdb0eca232163e2474f8c5d765f5453f08e016b8aa9b58"
+          }
+        ],
+        "ci_contexts": [
+          {
+            "context": "ci/test",
+            "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "conclusion": "success",
+            "observed_at": "2026-08-21T10:15:00Z",
+            "evidence_digest": "sha256:a64ab7015a753db1d4181fbf7ad0346d5e9e0dbf03530c5ceb1cf3b442c41f9a"
+          }
+        ]
+      },
+      "reviews": [
+        {
+          "review_id": "review-local-1",
+          "stage": "local",
+          "reviewer_principal": "reviewer-local",
+          "reviewer_profile": "profile-local",
+          "independent": true,
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_digest": "sha256:ebd93ed579f0d38a0043a09ccf217eb564a784e4eee7513599d4815aeb853346",
+          "verdict": "pass",
+          "findings_digest": "sha256:3234ca5335143a5ead836045374ba2872074a72fbc76b1d897b6e3deb6467337",
+          "evidence_digest": "sha256:3234ca5335143a5ead836045374ba2872074a72fbc76b1d897b6e3deb6467337"
+        },
+        {
+          "review_id": "review-pr-1",
+          "stage": "pull-request",
+          "reviewer_principal": "reviewer-pr",
+          "reviewer_profile": "profile-pr",
+          "independent": true,
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_digest": "sha256:ebd93ed579f0d38a0043a09ccf217eb564a784e4eee7513599d4815aeb853346",
+          "verdict": "pass",
+          "findings_digest": "sha256:75c17f6c89793a99116e56c8422ec3656d8a58f181eeeff75a4b2ccf0605b203",
+          "evidence_digest": "sha256:75c17f6c89793a99116e56c8422ec3656d8a58f181eeeff75a4b2ccf0605b203"
+        }
+      ],
+      "side_effects": [
+        {
+          "effect_key": "sha256:70c3abceb401469bc774616caeaf1b4a3afb28969afc5727f46c524e11b60a8e",
+          "kind": "branch.push",
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "intent_digest": "sha256:3b5fa3b232caefa0e4a63a0bf5ca75397a6b4803c2ae3fc51d6c069366d2f067",
+          "observation_digest": "sha256:8745bb5b42c98639679c997a26a7e337b75d1a954fca931c6468a0e7eaaa0d58",
+          "reconciliation_digest": null,
+          "confirmation_digest": "sha256:6575921d0d23f0595804a40aa9345aeeab6f2f55b989289da05e5e71b07f7282",
+          "status": "confirmed",
+          "evidence_digest": "sha256:538897d123ef83ab6e55754d9e19012e64d3c1aef665b1f4c46d6359097ffb71"
+        },
+        {
+          "effect_key": "sha256:7fae6f6e520e3f3b1ec81b28382b18cc825e450e93ac2448e559e3b5df0fa8f2",
+          "kind": "pull-request.create",
+          "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "intent_digest": "sha256:4ce1015f659b599ececcd66c8f8c45dd1f48ff7176bfdc44e43373bef349230c",
+          "observation_digest": "sha256:477ab87038c9f8ff996dc3518e789bcebc4da229775ef44bdf2ddb0c6478083e",
+          "reconciliation_digest": "sha256:5fa599fdbc46b1e9929d4d268a88386f884d0bd34fbd0d922c0f1a4e9469748e",
+          "confirmation_digest": "sha256:70a741d0426fbde00bf61948aa8f4d15bb6a7dd66693a3902217434179ec0219",
+          "status": "confirmed",
+          "evidence_digest": "sha256:9135ec082f1d7c667d097f2e97a8f5282c968273d1cec471e916eed43fb775f1"
+        }
+      ],
+      "approvals": [],
+      "cancellation": null,
+      "budget": {
+        "cost_usd": 2.5,
+        "agent_invocations": 3,
+        "fix_iterations": 1,
+        "elapsed_ms": 1140000,
+        "stop_reason": "pr-delivered"
+      },
+      "delivery": {
+        "closure_target": "pr",
+        "satisfied": true,
+        "pull_request": {
+          "forge": "github",
+          "repository": "acme/widgets",
+          "number": 42,
+          "url": "https://github.com/acme/widgets/pull/42",
+          "head_ref": "refs/heads/runmill/run_01JTEST",
+          "base_ref": "refs/heads/main",
+          "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "observed_at": "2026-08-21T10:18:00Z",
+          "evidence_digest": "sha256:9135ec082f1d7c667d097f2e97a8f5282c968273d1cec471e916eed43fb775f1"
+        }
+      },
+      "artifacts": [
+        {
+          "artifact_id": "artifact-work-order",
+          "kind": "work-order-envelope",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:7771c3c360d122bd117a3bb1e91399d1163f230682a2a5818015aeb9d33a5641",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/7771c3c360d122bd117a3bb1e91399d1163f230682a2a5818015aeb9d33a5641"
+        },
+        {
+          "artifact_id": "artifact-policy",
+          "kind": "effective-policy",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:ebd93ed579f0d38a0043a09ccf217eb564a784e4eee7513599d4815aeb853346",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/ebd93ed579f0d38a0043a09ccf217eb564a784e4eee7513599d4815aeb853346"
+        },
+        {
+          "artifact_id": "artifact-diff",
+          "kind": "normalized-diff",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:f54fd1d171d5f40035e10c7a9be52da483853b9e356c2c8072024040746c0e91",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/f54fd1d171d5f40035e10c7a9be52da483853b9e356c2c8072024040746c0e91"
+        },
+        {
+          "artifact_id": "artifact-runtime",
+          "kind": "runtime-manifest",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:d1f31e2a4a0eaa2114533d7cdc823814b559ce1977d3dd8ac959f27aa2622b30",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/d1f31e2a4a0eaa2114533d7cdc823814b559ce1977d3dd8ac959f27aa2622b30"
+        },
+        {
+          "artifact_id": "artifact-outcome-implementer",
+          "kind": "agent-outcome",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:5acb884da709fecf0bb5356d4e6716c96718462fa7788de2f9210b266e1948ac",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/5acb884da709fecf0bb5356d4e6716c96718462fa7788de2f9210b266e1948ac"
+        },
+        {
+          "artifact_id": "artifact-outcome-local-review",
+          "kind": "agent-outcome",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:634910fab27b10099958d2b194fa74140f80483251e0140af56e004874dfc3ab",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/634910fab27b10099958d2b194fa74140f80483251e0140af56e004874dfc3ab"
+        },
+        {
+          "artifact_id": "artifact-outcome-pr-review",
+          "kind": "agent-outcome",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:24d8975e84e9db7810872c571a6fec25dc5eaaa5629ec9d1e5c8832b9757e606",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/24d8975e84e9db7810872c571a6fec25dc5eaaa5629ec9d1e5c8832b9757e606"
+        },
+        {
+          "artifact_id": "artifact-local-check",
+          "kind": "verification",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:371a305df442c5956fbdb0eca232163e2474f8c5d765f5453f08e016b8aa9b58",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/371a305df442c5956fbdb0eca232163e2474f8c5d765f5453f08e016b8aa9b58"
+        },
+        {
+          "artifact_id": "artifact-ci",
+          "kind": "ci-observation",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:a64ab7015a753db1d4181fbf7ad0346d5e9e0dbf03530c5ceb1cf3b442c41f9a",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/a64ab7015a753db1d4181fbf7ad0346d5e9e0dbf03530c5ceb1cf3b442c41f9a"
+        },
+        {
+          "artifact_id": "artifact-review-local",
+          "kind": "review",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:3234ca5335143a5ead836045374ba2872074a72fbc76b1d897b6e3deb6467337",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/3234ca5335143a5ead836045374ba2872074a72fbc76b1d897b6e3deb6467337"
+        },
+        {
+          "artifact_id": "artifact-review-pr",
+          "kind": "review",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:75c17f6c89793a99116e56c8422ec3656d8a58f181eeeff75a4b2ccf0605b203",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/75c17f6c89793a99116e56c8422ec3656d8a58f181eeeff75a4b2ccf0605b203"
+        },
+        {
+          "artifact_id": "artifact-branch-push",
+          "kind": "side-effect",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:538897d123ef83ab6e55754d9e19012e64d3c1aef665b1f4c46d6359097ffb71",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/538897d123ef83ab6e55754d9e19012e64d3c1aef665b1f4c46d6359097ffb71"
+        },
+        {
+          "artifact_id": "artifact-pr-create",
+          "kind": "side-effect",
+          "size_bytes": 10,
+          "media_type": "application/json",
+          "digest": "sha256:9135ec082f1d7c667d097f2e97a8f5282c968273d1cec471e916eed43fb775f1",
+          "retention_class": "portable",
+          "location_ref": "cas://sha256/9135ec082f1d7c667d097f2e97a8f5282c968273d1cec471e916eed43fb775f1"
+        }
+      ]
+    }
+  },
+  "signature": "base64url:CT0KEWecU0sk9q_u5wlY77Xlj-A4gdEkrYDFiPY_lfJ3zB1qs5IEbPA2Ku6vm2XnEZaTB0xgfQLcJeEOvp3lAw"
+}
