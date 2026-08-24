@@ -1,0 +1,150 @@
+name: asf-local
+
+x-asf-environment: &asf-environment
+  ASF_TENANT_ID: ${ASF_TENANT_ID:?set ASF_TENANT_ID}
+  ASF_DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+  ASF_BIND_ADDRESS: ${ASF_BIND_ADDRESS:-0.0.0.0:8080}
+  ASF_ARTIFACT_ROOT: /var/lib/asf/artifacts
+  ASF_MIGRATIONS_DIR: /opt/asf/migrations
+  ASF_SIGNING_KEY_ID: ${ASF_SIGNING_KEY_ID:?set ASF_SIGNING_KEY_ID}
+  ASF_SIGNING_SEED_BASE64: ${ASF_SIGNING_SEED_BASE64:?set ASF_SIGNING_SEED_BASE64}
+  ASF_API_TOKENS_JSON: ${ASF_API_TOKENS_JSON:?set ASF_API_TOKENS_JSON}
+  ASF_DATABASE_MAX_CONNECTIONS: ${ASF_DATABASE_MAX_CONNECTIONS:-20}
+  ASF_WORKFLOW_POLL_MILLISECONDS: ${ASF_WORKFLOW_POLL_MILLISECONDS:-1000}
+  ASF_WORKFLOW_LEASE_SECONDS: ${ASF_WORKFLOW_LEASE_SECONDS:-30}
+  ASF_MAINTENANCE_MODE: ${ASF_MAINTENANCE_MODE:-false}
+  # Optional pass-through values remain absent in the container unless set by
+  # the operator; ASF validates the group atomically.
+  ASF_GITHUB_API_BASE:
+  ASF_GITHUB_BEARER_TOKEN:
+  ASF_LINEAR_AUTH_MODE:
+  ASF_LINEAR_API_TOKEN:
+  ASF_LINEAR_TEAM_MAPPINGS_JSON:
+  ASF_LINEAR_CORRELATION_SECRET:
+  ASF_LINEAR_CONNECTOR_IDENTITY:
+  ASF_LINEAR_OPT_IN_LABEL:
+  ASF_LINEAR_PAGE_SIZE:
+  ASF_RUNMILL_REGISTRY_PATH:
+  ASF_RUNMILL_CONTROL_TIMEOUT_MILLISECONDS:
+  ASF_RUNMILL_CONTROLLER_SUBJECT:
+  ASF_RUNMILL_CANCELLATION_GRACE_SECONDS:
+  ASF_RUNMILL_WORKER_ID:
+  RUST_LOG: ${RUST_LOG:-info}
+
+x-asf-image: &asf-image
+  image: ${ASF_IMAGE:-asf:local}
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17.6-bookworm}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [control]
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-07-23T15-54-02Z}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [control]
+
+  minio-bootstrap:
+    image: ${MINIO_CLIENT_IMAGE:-minio/mc:RELEASE.2025-07-21T05-28-08Z}
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-asf-evidence}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+        mc anonymous set none "local/$${MINIO_BUCKET}"
+    restart: "no"
+    networks: [control]
+
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.132.0}
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docs/deployment/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:${OTEL_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${OTEL_HTTP_PORT:-4318}:4318"
+    restart: unless-stopped
+    networks: [control]
+
+  asf-migrate:
+    <<: *asf-image
+    command: ["migrate"]
+    environment: *asf-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [control]
+
+  asf:
+    <<: *asf-image
+    command: ["all"]
+    environment: *asf-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      asf-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${ASF_PORT:-8080}:8080"
+    volumes:
+      - artifact-data:/var/lib/asf/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    stop_grace_period: 45s
+    restart: unless-stopped
+    networks: [control]
+
+networks:
+  control:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  minio-data:
+  artifact-data:

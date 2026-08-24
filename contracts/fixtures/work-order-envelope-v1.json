@@ -1,0 +1,82 @@
+{
+  "schema": "asf.work-order-envelope/v1",
+  "key_id": "asf-signing-key-fixture",
+  "algorithm": "EdDSA",
+  "issued_at": "2026-08-21T10:00:00Z",
+  "not_before": "2026-08-21T10:00:00Z",
+  "expires_at": "2026-08-21T10:15:00Z",
+  "payload": {
+    "schema": "asf.work-order/v1",
+    "work_order_id": "018f0000-0000-7000-8000-000000000001",
+    "tenant_id": "018f0000-0000-7000-8000-000000000002",
+    "work_item_id": "018f0000-0000-7000-8000-000000000003",
+    "attempt_id": "018f0000-0000-7000-8000-000000000004",
+    "idempotency_key": "018f0000-0000-7000-8000-000000000002/018f0000-0000-7000-8000-000000000003/018f0000-0000-7000-8000-000000000004",
+    "source": {
+      "system": "linear",
+      "external_id": "ENG-123",
+      "snapshot_digest": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+    },
+    "repository": {
+      "forge": "github",
+      "repository": "acme/payments",
+      "base_ref": "refs/heads/main",
+      "base_sha": "0123456789012345678901234567890123456789"
+    },
+    "objective": {
+      "title": "Reject expired checkout sessions",
+      "description": "Expired checkout sessions must be rejected without changing login behavior",
+      "acceptance_criteria": [
+        "Expired sessions return HTTP 401"
+      ],
+      "non_goals": [
+        "Do not change login behavior"
+      ]
+    },
+    "scope": {
+      "allowed_paths": [
+        "src/**",
+        "tests/**"
+      ],
+      "forbidden_paths": [
+        ".github/**",
+        ".runmill/**"
+      ],
+      "risk_class": "low"
+    },
+    "verification": {
+      "required_local_check_ids": [
+        "fmt",
+        "unit"
+      ],
+      "required_remote_checks": [
+        "ci/test"
+      ],
+      "policy_snapshot_digest": "sha256:9fe296a3096e1b1a3be5c7058eb66184e82d5d977483ff237b7917816d177804"
+    },
+    "identities": {
+      "implementer": "codex:asf-production",
+      "local_reviewer": "claude:asf-review",
+      "pr_reviewer": "claude:asf-review"
+    },
+    "runtime": {
+      "sandbox_profile": "linux-production-v1",
+      "tool_policy": "rust-v1",
+      "network_policy": "github-only-v1"
+    },
+    "budgets": {
+      "wall_seconds": 3600,
+      "max_cost_usd": 10.0,
+      "max_agent_invocations": 6,
+      "max_fix_iterations": 2
+    },
+    "delivery": {
+      "closure_target": "pr",
+      "draft_pr": true,
+      "merge_policy_ref": null
+    },
+    "policy_digest": "sha256:823412d1eacb93bd7dfc3e34b0d717f349ba63a70d360b8be98261be736f3a4b",
+    "harness_digest": "sha256:5e41334048aa3d9e1d5e54a0c137475a5646d968bef1b78372a8dc3b5a951ff9"
+  },
+  "signature": "base64url:P8TjB9gT-lT-_kSM9vIToyIbXlACRCWmxy9P4LioRQKxjcup_bwQN3NxMEivW7LYztUaVEwUe8xEEjLqwCCBCQ"
+}

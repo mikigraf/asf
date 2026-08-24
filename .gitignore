@@ -1,0 +1,8 @@
+/target/
+/.env
+/.env.*
+!/.env.example
+*.profraw
+*.log
+.DS_Store
+

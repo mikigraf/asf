@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust and migration smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.6-bookworm
+        env:
+          POSTGRES_USER: asf
+          POSTGRES_PASSWORD: asf-ci-password
+          POSTGRES_DB: asf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U asf -d asf"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: "1"
+      ASF_TENANT_ID: 0198efb8-0000-7000-8000-000000000001
+      ASF_DATABASE_URL: postgresql://asf:asf-ci-password@127.0.0.1:5432/asf
+      ASF_TEST_DATABASE_URL: postgresql://asf:asf-ci-password@127.0.0.1:5432/asf_test
+      ASF_BIND_ADDRESS: 127.0.0.1:8080
+      ASF_ARTIFACT_ROOT: /tmp/asf-artifacts
+      ASF_MIGRATIONS_DIR: ${{ github.workspace }}/migrations
+      ASF_SIGNING_KEY_ID: ci-signing-key
+      ASF_SIGNING_SEED_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      ASF_API_TOKENS_JSON: '[{"token":"ci-token-that-is-at-least-thirty-two-bytes","subject":"ci","roles":["platform_admin"]}]'
+      ASF_DATABASE_MAX_CONNECTIONS: "10"
+      ASF_WORKFLOW_POLL_MILLISECONDS: "100"
+      ASF_WORKFLOW_LEASE_SECONDS: "10"
+      ASF_MAINTENANCE_MODE: "true"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate Compose topology
+        run: docker compose --env-file .env.example config --quiet
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint all targets
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      # Live tests write into their own database. Several of them create
+      # tenants in `public`, and a V1 deployment refuses to bind its
+      # configured tenant when a foreign one exists, so the migration smoke
+      # below must keep an untouched database of its own.
+      - name: Create the isolated live-test database
+        run: psql "$ASF_DATABASE_URL" --command "CREATE DATABASE asf_test OWNER asf"
+
+      - name: Run tests, including live PostgreSQL failure paths
+        run: cargo test --locked --all-targets --all-features -- --test-threads=1
+
+      - name: Build runtime binaries
+        run: cargo build --locked --bins
+
+      - name: Apply forward migrations twice through ASF
+        run: |
+          target/debug/asf-server migrate
+          target/debug/asf-server migrate
+
+      - name: Verify migrated durability schema
+        run: |
+          test "$(psql "$ASF_DATABASE_URL" --no-align --tuples-only --command "select count(*) from information_schema.tables where table_schema = 'public' and table_name in ('work_items','work_orders','workflow_jobs','workflow_timers','effect_intents','outbox','accountability_anchors','audit_events')")" = "8"
+          test "$(psql "$ASF_DATABASE_URL" --no-align --tuples-only --command "select count(*) from pg_trigger where tgname in ('work_orders_immutable','work_items_require_accountability','accountability_anchor_removal_guard') and not tgisinternal")" = "3"
+          test "$(psql "$ASF_DATABASE_URL" --no-align --tuples-only --command "select count(*) from tenants where id = '$ASF_TENANT_ID'::uuid")" = "1"
+          test "$(psql "$ASF_DATABASE_URL" --no-align --tuples-only --command "select count(*) from audit_events where tenant_id = '$ASF_TENANT_ID'::uuid and actor_id = 'asf-server:migrate' and action = 'TENANT_PROVISIONED'")" = "1"
+
+      - name: Smoke API readiness, authentication, and graceful SIGTERM
+        env:
+          ASF_API_URL: http://127.0.0.1:8080/
+          ASF_API_TOKEN: ci-token-that-is-at-least-thirty-two-bytes
+        run: |
+          set -euo pipefail
+          server_log="${RUNNER_TEMP}/asf-server.log"
+          target/debug/asf-server all >"$server_log" 2>&1 &
+          server_pid=$!
+
+          cleanup() {
+            if kill -0 "$server_pid" 2>/dev/null; then
+              kill -TERM "$server_pid" 2>/dev/null || true
+              wait "$server_pid" || true
+            fi
+            cat "$server_log"
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null \
+              && curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/v1/work-items)" = "401"
+          target/debug/asf --output json doctor >/dev/null
+          target/debug/asf --output json work list >/dev/null
+
+          kill -TERM "$server_pid"
+          wait "$server_pid"
+          trap - EXIT
+          grep --quiet '"message":"shutdown signal received"' "$server_log"
