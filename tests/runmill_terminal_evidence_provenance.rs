@@ -32,6 +32,7 @@ use uuid::Uuid;
 
 use asf::{
     adapters::{RUNMILL_CONTROL_PROTOCOL_VERSION, RunmillControlClient},
+    contracts::{RunmillEvidenceTimestamp, SignedRunmillEvidenceBundle},
     crypto::{Ed25519Signer, canonical_json, encode_verifying_key, sha256_digest},
     domain::{TenantId, WorkerId},
     ledger::{
@@ -40,9 +41,9 @@ use asf::{
         produce_due_runmill_terminal_evidence_jobs, record_runmill_control_observation,
     },
     runtime::{
-        ActivityControls, ActivityOutcome, JobHandler, OBSERVE_RUNMILL_RUN_ACTIVITY_CONTRACT_ID,
-        RETAIN_RUNMILL_TERMINAL_EVIDENCE, RETAIN_RUNMILL_TERMINAL_EVIDENCE_ACTIVITY_CONTRACT_ID,
-        RunmillTerminalEvidenceHandler,
+        ActivityControls, ActivityOutcome, EvidenceVerificationHandoff, JobHandler,
+        OBSERVE_RUNMILL_RUN_ACTIVITY_CONTRACT_ID, RETAIN_RUNMILL_TERMINAL_EVIDENCE,
+        RETAIN_RUNMILL_TERMINAL_EVIDENCE_ACTIVITY_CONTRACT_ID, RunmillTerminalEvidenceHandler,
     },
 };
 
@@ -668,6 +669,76 @@ impl Fixture {
             .to_rfc3339_opts(SecondsFormat::Secs, true)
     }
 
+    /// One signed Runmill evidence bundle, rebound from the canonical contract
+    /// fixture onto this run and re-signed by the worker's own key. This is the
+    /// second signed fact an `asf.get_evidence` response carries, and the one a
+    /// verifier reads.
+    fn signed_evidence(&self) -> Value {
+        let fixture = SignedRunmillEvidenceBundle::from_json(include_bytes!(
+            "../contracts/fixtures/runmill-signed-evidence-v1.json"
+        ))
+        .expect("decode the canonical Runmill evidence fixture");
+        let mut statement =
+            serde_json::to_value(fixture.statement).expect("encode evidence statement");
+
+        statement["subject"][0]["digest"]["sha1"] = json!(commit('c'));
+        statement["predicate"]["run"]["run_id"] = json!(self.external_run_id);
+        statement["predicate"]["run"]["work_order_id"] = json!(self.work_order_id.to_string());
+        statement["predicate"]["run"]["attempt_id"] = json!(self.attempt_id.to_string());
+        statement["predicate"]["run"]["completed_at"] = json!(self.issued_at_text());
+        statement["predicate"]["work_order"]["payload_digest"] = json!(self.work_order_digest);
+        statement["predicate"]["source"]["base_sha"] = json!(commit('b'));
+        statement["predicate"]["source"]["candidate_sha"] = json!(commit('c'));
+        statement["predicate"]["source"]["remote_head_sha"] = json!(commit('c'));
+
+        let statement =
+            serde_json::from_value(statement).expect("decode the rebound evidence statement");
+        let bundle = SignedRunmillEvidenceBundle::sign(
+            statement,
+            RunmillEvidenceTimestamp::new(self.issued_at_text()).expect("evidence issuance"),
+            &self.signer,
+        )
+        .expect("sign the rebound evidence bundle");
+        serde_json::to_value(bundle).expect("encode the signed evidence bundle")
+    }
+
+    /// The same terminal read for a run that stopped without ever finalizing
+    /// an evidence bundle. The contract forbids carrying a signed bundle, a
+    /// bundle digest, or artifacts in that state.
+    fn unfinalized_evidence_view(&self, envelope: &Value) -> Value {
+        let mut view = self.evidence_view(envelope);
+        view["status"] = json!("stopped");
+        view["bundleDigest"] = Value::Null;
+        view["signedBundle"] = Value::Null;
+        view["artifacts"] = json!([]);
+        view
+    }
+
+    /// The unsigned artifact listing the read returns beside the signed
+    /// manifest. The control contract states it in its own camelCase shape, and
+    /// it must restate every signed entry exactly.
+    fn evidence_artifact_listing(evidence: &Value) -> Value {
+        let manifest = evidence["statement"]["predicate"]["artifacts"]
+            .as_array()
+            .expect("signed manifest is an array");
+        Value::Array(
+            manifest
+                .iter()
+                .map(|artifact| {
+                    json!({
+                        "artifactId": artifact["artifact_id"],
+                        "kind": artifact["kind"],
+                        "digest": artifact["digest"],
+                        "sizeBytes": artifact["size_bytes"],
+                        "mediaType": artifact["media_type"],
+                        "retentionClass": artifact["retention_class"],
+                        "locationRef": artifact["location_ref"],
+                    })
+                })
+                .collect(),
+        )
+    }
+
     /// The exact in-toto statement a conformant terminal bundle signs.
     fn statement(&self) -> Value {
         json!({
@@ -780,6 +851,7 @@ impl Fixture {
     }
 
     fn evidence_view(&self, envelope: &Value) -> Value {
+        let evidence = self.signed_evidence();
         json!({
             "schema": EVIDENCE_VIEW_SCHEMA,
             "runId": self.external_run_id,
@@ -789,12 +861,12 @@ impl Fixture {
             "candidateSha": commit('c'),
             "policyDigest": self.policy_digest,
             "latestSequence": TERMINAL_EVENT_SEQ,
-            "status": "stopped",
+            "status": "final",
             "complete": true,
-            "bundleDigest": null,
-            "artifacts": [],
+            "bundleDigest": evidence["bundle_digest"],
+            "artifacts": Self::evidence_artifact_listing(&evidence),
             "latestEvent": null,
-            "signedBundle": null,
+            "signedBundle": evidence,
             "terminalBundleDigest": envelope["bundle_digest"],
             "signedTerminalBundle": envelope,
         })
@@ -1250,6 +1322,7 @@ async fn production_retention_activity_records_the_bundle_from_a_live_evidence_r
         TenantId::from_uuid(fixture.tenant_id),
         WorkerId::from_uuid(fixture.worker_id),
         control.client(),
+        EvidenceVerificationHandoff::Enqueue,
     )
     .expect("construct the tenant-bound retention activity");
 
@@ -1280,6 +1353,79 @@ async fn production_retention_activity_records_the_bundle_from_a_live_evidence_r
         sha256_digest(&success_wire(&fixture.evidence_view(&envelope)))
     );
 
+    // The same commit ingested the signed evidence bundle a verifier reads,
+    // bound every artifact its signed manifest names, and created the
+    // obligation to verify it.
+    let evidence = signed_evidence_of(&fixture);
+    let (evidence_id, ingested_digest, work_order_digest, target, satisfied): (
+        Uuid,
+        String,
+        String,
+        String,
+        bool,
+    ) = sqlx::query_as(
+        "SELECT id, payload_digest, work_order_digest, requested_target, target_satisfied FROM evidence_bundles WHERE tenant_id = $1 AND run_id = $2",
+    )
+    .bind(fixture.tenant_id)
+    .bind(fixture.run_id)
+    .fetch_one(&pool)
+    .await
+    .expect("exactly one evidence bundle was ingested");
+    assert_eq!(ingested_digest, evidence["bundle_digest"].as_str().unwrap());
+    assert_eq!(work_order_digest, fixture.work_order_digest);
+    assert_eq!(target, "pull_request");
+    assert!(satisfied);
+
+    let manifest = evidence["statement"]["predicate"]["artifacts"]
+        .as_array()
+        .expect("signed manifest");
+    let bound: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM evidence_artifacts AS link JOIN artifacts AS artifact ON artifact.tenant_id = link.tenant_id AND artifact.id = link.artifact_id WHERE link.tenant_id = $1 AND link.evidence_id = $2",
+    )
+    .bind(fixture.tenant_id)
+    .bind(evidence_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count durable artifact bindings");
+    assert_eq!(
+        usize::try_from(bound).unwrap(),
+        manifest.len(),
+        "every signed manifest artifact has exactly one durable binding"
+    );
+    for artifact in manifest {
+        let (kind, digest): (String, String) = sqlx::query_as(
+            "SELECT link.manifest_kind, artifact.digest FROM evidence_artifacts AS link JOIN artifacts AS artifact ON artifact.tenant_id = link.tenant_id AND artifact.id = link.artifact_id WHERE link.tenant_id = $1 AND link.evidence_id = $2 AND link.manifest_artifact_id = $3",
+        )
+        .bind(fixture.tenant_id)
+        .bind(evidence_id)
+        .bind(artifact["artifact_id"].as_str().unwrap())
+        .fetch_one(&pool)
+        .await
+        .expect("each signed artifact is bound by its manifest identity");
+        assert_eq!(kind, artifact["kind"].as_str().unwrap());
+        assert_eq!(digest, artifact["digest"].as_str().unwrap());
+    }
+
+    let (verification_payload, verification_status): (Value, String) = sqlx::query_as(
+        "SELECT payload, status FROM workflow_jobs WHERE tenant_id = $1 AND job_type = 'VERIFY_EVIDENCE'",
+    )
+    .bind(fixture.tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("retention created exactly one verification obligation");
+    assert_eq!(verification_status, "PENDING");
+    assert_eq!(verification_payload["evidence_id"], json!(evidence_id));
+    assert_eq!(verification_payload["run_id"], json!(fixture.run_id));
+    assert_eq!(
+        verification_payload["payload_digest"],
+        json!(ingested_digest)
+    );
+    assert_eq!(
+        verification_payload["expectation_digest"],
+        json!(digest('e')),
+        "the obligation carries the run's own immutable evidence expectation"
+    );
+
     let (status, result): (String, Value) =
         sqlx::query_as("SELECT status, result FROM workflow_jobs WHERE tenant_id = $1 AND id = $2")
             .bind(fixture.tenant_id)
@@ -1294,6 +1440,9 @@ async fn production_retention_activity_records_the_bundle_from_a_live_evidence_r
     );
     assert_eq!(result["inserted"], json!(true));
     assert_eq!(result["bundle_id"], json!(bundle_id));
+    assert_eq!(result["evidence_id"], json!(evidence_id));
+    assert_eq!(result["evidence_ingested"], json!(true));
+    assert_eq!(result["evidence_artifacts_bound"], json!(manifest.len()));
 
     // Retention observes; it never projects events or rewrites run state.
     let (run_state, projected_events): (String, i64) = sqlx::query_as(
@@ -1391,6 +1540,136 @@ async fn terminal_ready_streams_produce_exactly_one_retention_job_until_a_bundle
     assert_eq!(retained.jobs_enqueued, 0);
 
     database.cleanup().await;
+}
+
+#[tokio::test]
+async fn a_run_that_never_finalized_evidence_is_retained_without_a_verification_obligation() {
+    let Ok(database_url) = std::env::var("ASF_TEST_DATABASE_URL") else {
+        return;
+    };
+    let database = ScopedDatabase::create(&database_url).await;
+    let fixture = Fixture::insert(&database.ledger).await;
+    let pool = database.ledger.pool().clone();
+
+    let envelope = fixture.envelope(&fixture.statement());
+    let view = fixture.unfinalized_evidence_view(&envelope);
+    let control = ControlFixture::new(json!({"ok": true, "data": view}));
+
+    let bundle_id = Uuid::now_v7();
+    let job = claimed_retention_job(&pool, &fixture, bundle_id).await;
+    let handler = RunmillTerminalEvidenceHandler::new(
+        database.ledger.clone(),
+        TenantId::from_uuid(fixture.tenant_id),
+        WorkerId::from_uuid(fixture.worker_id),
+        control.client(),
+        EvidenceVerificationHandoff::Enqueue,
+    )
+    .expect("construct the tenant-bound retention activity");
+
+    let outcome = handler
+        .execute(&job, ActivityControls::new(false))
+        .await
+        .expect("a terminal read without finalized evidence is still retained");
+    assert_eq!(outcome, ActivityOutcome::TransactionCommitted);
+
+    // The terminal proof is kept: losing it would lose the only record that
+    // this run stopped at this sequence.
+    let terminal: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM runmill_terminal_evidence_bundles WHERE tenant_id = $1 AND run_id = $2",
+    )
+    .bind(fixture.tenant_id)
+    .bind(fixture.run_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count retained terminal bundles");
+    assert_eq!(terminal, 1);
+
+    // Nothing was invented: no evidence bundle, and no obligation to verify one.
+    let ingested: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM evidence_bundles WHERE tenant_id = $1")
+            .bind(fixture.tenant_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count ingested evidence bundles");
+    assert_eq!(ingested, 0);
+    let verifications: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM workflow_jobs WHERE tenant_id = $1 AND job_type = 'VERIFY_EVIDENCE'",
+    )
+    .bind(fixture.tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count verification obligations");
+    assert_eq!(verifications, 0);
+
+    let result: Value =
+        sqlx::query_scalar("SELECT result FROM workflow_jobs WHERE tenant_id = $1 AND id = $2")
+            .bind(fixture.tenant_id)
+            .bind(job.id)
+            .fetch_one(&pool)
+            .await
+            .expect("the retention job is settled");
+    assert_eq!(result["evidence_id"], Value::Null);
+    assert_eq!(result["verification_job_id"], Value::Null);
+
+    database.cleanup().await;
+}
+
+#[tokio::test]
+async fn a_deployment_without_a_verifier_ingests_evidence_and_creates_no_obligation() {
+    let Ok(database_url) = std::env::var("ASF_TEST_DATABASE_URL") else {
+        return;
+    };
+    let database = ScopedDatabase::create(&database_url).await;
+    let fixture = Fixture::insert(&database.ledger).await;
+    let pool = database.ledger.pool().clone();
+
+    let envelope = fixture.envelope(&fixture.statement());
+    let view = fixture.evidence_view(&envelope);
+    let control = ControlFixture::new(json!({"ok": true, "data": view}));
+
+    let bundle_id = Uuid::now_v7();
+    let job = claimed_retention_job(&pool, &fixture, bundle_id).await;
+    let handler = RunmillTerminalEvidenceHandler::new(
+        database.ledger.clone(),
+        TenantId::from_uuid(fixture.tenant_id),
+        WorkerId::from_uuid(fixture.worker_id),
+        control.client(),
+        EvidenceVerificationHandoff::RetainOnly,
+    )
+    .expect("construct a retention activity with no verifier to hand off to");
+
+    handler
+        .execute(&job, ActivityControls::new(false))
+        .await
+        .expect("evidence is still ingested where no verifier is installed");
+
+    // The evidence is durable and verifiable later; what is refused is queueing
+    // work this deployment cannot serve.
+    let ingested: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM evidence_bundles WHERE tenant_id = $1 AND run_id = $2",
+    )
+    .bind(fixture.tenant_id)
+    .bind(fixture.run_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count ingested evidence bundles");
+    assert_eq!(ingested, 1);
+    let verifications: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM workflow_jobs WHERE tenant_id = $1 AND job_type = 'VERIFY_EVIDENCE'",
+    )
+    .bind(fixture.tenant_id)
+    .fetch_one(&pool)
+    .await
+    .expect("count verification obligations");
+    assert_eq!(verifications, 0);
+
+    database.cleanup().await;
+}
+
+/// The signed evidence bundle this fixture's read returns. Rebuilding it is
+/// deterministic: the statement, the signer, and the issuance are all fixed.
+fn signed_evidence_of(fixture: &Fixture) -> Value {
+    fixture.signed_evidence()
 }
 
 /// One claimed `RETAIN_RUNMILL_TERMINAL_EVIDENCE` job, exactly as the producer
