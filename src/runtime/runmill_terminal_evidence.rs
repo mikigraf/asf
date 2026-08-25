@@ -7,11 +7,16 @@
 //! response wire is a third provenance which is never conflated with the two
 //! snapshots.
 //!
-//! This activity performs that one read and retains its result. It never
-//! projects Runmill events, never updates `runs`, and never advances an
-//! observation stream: the append-only bundle is the whole effect. The remote
-//! read completes and validates before the ledger transaction opens, so a
-//! timeout or a malformed response can never leave a partial local proof.
+//! This activity performs that one read and retains everything it proved. One
+//! commit holds the append-only terminal bundle, the signed evidence bundle a
+//! verifier will read, durable metadata for every artifact its signed manifest
+//! names, and — where a verifier is installed — the verification obligation
+//! itself, so evidence is never retained with nobody owning what happens to it.
+//!
+//! It still never projects Runmill events, never updates `runs`, and never
+//! advances an observation stream. The remote read completes and validates
+//! before the ledger transaction opens, so a timeout or a malformed response
+//! can never leave a partial local proof.
 
 use std::{fmt, sync::Arc};
 
@@ -23,19 +28,21 @@ use uuid::Uuid;
 
 use super::{
     ActivityControls, ActivityOutcome, JobClaimScope, JobHandler, RETAIN_RUNMILL_TERMINAL_EVIDENCE,
-    RETAIN_RUNMILL_TERMINAL_EVIDENCE_ACTIVITY_CONTRACT_ID,
+    RETAIN_RUNMILL_TERMINAL_EVIDENCE_ACTIVITY_CONTRACT_ID, VERIFY_EVIDENCE,
+    VERIFY_EVIDENCE_ACTIVITY_CONTRACT_ID,
 };
 use crate::{
     Error, Result,
     adapters::{
-        RunmillControlClient, RunmillControlError, RunmillEvidenceView, RunmillRunId,
-        RunmillRunPhase, RunmillValidatedRead,
+        RunmillControlClient, RunmillControlError, RunmillEvidenceStatus, RunmillEvidenceView,
+        RunmillRunId, RunmillRunPhase, RunmillValidatedRead,
     },
     crypto::is_sha256_digest,
     domain::{TenantId, WorkerId},
     ledger::{
-        ClaimedWorkflowJob, PgLedger, RunmillTerminalEvidenceFence, RunmillTerminalEvidenceOutcome,
-        record_runmill_terminal_evidence,
+        ClaimedWorkflowJob, PgLedger, RunmillEvidenceIngestionOutcome,
+        RunmillTerminalEvidenceFence, RunmillTerminalEvidenceOutcome,
+        record_runmill_evidence_ingestion, record_runmill_terminal_evidence,
     },
     security::reject_sensitive_fields,
 };
@@ -43,6 +50,20 @@ use crate::{
 const TERMINAL_EVIDENCE_PAYLOAD_SCHEMA_V1: &str = "asf.runmill-terminal-evidence/v1";
 const TERMINAL_EVIDENCE_RESULT_SCHEMA_V1: &str = "asf.runmill-terminal-evidence-result/v1";
 const MAX_RUNMILL_SEQUENCE: u64 = 9_007_199_254_740_991;
+const VERIFICATION_JOB_PRIORITY: i16 = 75;
+const VERIFICATION_JOB_MAX_ATTEMPTS: i32 = 25;
+
+/// Whether this process may create the verification obligation itself.
+///
+/// A deployment without a ready verifier still retains everything the evidence
+/// read proved — refusing to retain would lose the proof entirely — but it must
+/// not enqueue a `VERIFY_EVIDENCE` job nothing here can serve. The authenticated
+/// API can schedule verification for an ingested bundle later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceVerificationHandoff {
+    Enqueue,
+    RetainOnly,
+}
 
 /// The single control read this activity is allowed to make.
 ///
@@ -77,6 +98,7 @@ pub struct RunmillTerminalEvidenceHandler {
     tenant_id: TenantId,
     worker_id: WorkerId,
     control: Arc<dyn RunmillTerminalEvidenceControl>,
+    handoff: EvidenceVerificationHandoff,
 }
 
 impl fmt::Debug for RunmillTerminalEvidenceHandler {
@@ -87,6 +109,7 @@ impl fmt::Debug for RunmillTerminalEvidenceHandler {
             .field("tenant_id", &self.tenant_id)
             .field("worker_id", &self.worker_id)
             .field("control", &"RunmillControlClient([REDACTED])")
+            .field("handoff", &self.handoff)
             .finish()
     }
 }
@@ -103,6 +126,7 @@ impl RunmillTerminalEvidenceHandler {
         tenant_id: TenantId,
         worker_id: WorkerId,
         control: RunmillControlClient,
+        handoff: EvidenceVerificationHandoff,
     ) -> Result<Self> {
         if tenant_id.as_uuid().is_nil() || worker_id.as_uuid().is_nil() {
             return Err(Error::Validation(
@@ -114,6 +138,7 @@ impl RunmillTerminalEvidenceHandler {
             tenant_id,
             worker_id,
             control: Arc::new(control),
+            handoff,
         })
     }
 
@@ -145,6 +170,11 @@ impl RunmillTerminalEvidenceHandler {
         read: RunmillValidatedRead<RunmillEvidenceView>,
     ) -> Result<ActivityOutcome> {
         let fence = payload.fence(job)?;
+        // The evidence read carries two signed facts. The terminal bundle
+        // proves the run stopped; the evidence bundle is what a verifier
+        // reads. Both are derived from this one proof, so the view is kept
+        // before the proof is consumed by retention.
+        let view = read.value().clone();
         let mut transaction = self.ledger.pool().begin().await.map_err(|error| {
             Error::Persistence(format!(
                 "begin Runmill terminal evidence transaction: {error}"
@@ -152,13 +182,111 @@ impl RunmillTerminalEvidenceHandler {
         })?;
         assert_exact_retention_authority(&mut *transaction, job, payload, true).await?;
         let outcome = record_runmill_terminal_evidence(&mut transaction, &fence, read).await?;
-        complete_retention_job(&mut transaction, job, payload, &outcome).await?;
+        // A run can stop without ever finalizing an evidence bundle — a refusal
+        // or an early failure is terminal but has nothing to verify. Only a
+        // `final` read carries the signed bundle a verifier reads, so only that
+        // read produces an ingestion and an obligation to verify it.
+        let ingestion = if view.status == RunmillEvidenceStatus::Final {
+            Some(record_runmill_evidence_ingestion(&mut transaction, &fence, &view).await?)
+        } else {
+            None
+        };
+        // The obligation to verify is created in the same commit as the
+        // evidence it verifies, so a retained bundle is never left with nobody
+        // owning what happens to it.
+        let verification_job_id = match ingestion.as_ref() {
+            Some(ingestion) => {
+                self.enqueue_verification(&mut transaction, job, payload, ingestion)
+                    .await?
+            }
+            None => None,
+        };
+        complete_retention_job(
+            &mut transaction,
+            job,
+            payload,
+            &outcome,
+            ingestion.as_ref(),
+            verification_job_id,
+        )
+        .await?;
         transaction.commit().await.map_err(|error| {
             Error::Persistence(format!(
                 "commit Runmill terminal evidence transaction: {error}"
             ))
         })?;
         Ok(ActivityOutcome::TransactionCommitted)
+    }
+
+    /// Create this bundle's verification obligation, or explain why this
+    /// process may not.
+    ///
+    /// The job is keyed on the evidence itself, so a retried retention adopts
+    /// the obligation it already created rather than queueing a second one.
+    async fn enqueue_verification(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        job: &ClaimedWorkflowJob,
+        payload: &TerminalEvidencePayload,
+        ingestion: &RunmillEvidenceIngestionOutcome,
+    ) -> Result<Option<Uuid>> {
+        if self.handoff == EvidenceVerificationHandoff::RetainOnly {
+            return Ok(None);
+        }
+        let workflow_instance_id = job.workflow_instance_id.ok_or_else(|| {
+            Error::Validation(format!(
+                "Runmill terminal evidence job {} lacks its workflow binding",
+                job.id
+            ))
+        })?;
+        let verification_payload = json!({
+            "evidence_id": ingestion.evidence_id,
+            "run_id": payload.run_id,
+            "payload_digest": ingestion.payload_digest,
+            "work_order_digest": ingestion.work_order_digest,
+            "expectation_digest": ingestion.expectation_digest,
+        });
+        reject_sensitive_fields(&verification_payload)?;
+        let idempotency_key = format!(
+            "runmill-evidence-verification:{}:{}",
+            payload.run_id, ingestion.payload_digest
+        );
+
+        let job_id = Uuid::now_v7();
+        let inserted = sqlx::query_scalar::<_, Uuid>(
+            r"
+            INSERT INTO workflow_jobs (
+                id, tenant_id, workflow_instance_id, work_item_id, attempt_id,
+                job_type, activity_contract_id, status, payload, idempotency_key,
+                priority, available_at, max_attempts
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, $9, $10,
+                clock_timestamp(), $11
+            )
+            ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+            RETURNING id
+            ",
+        )
+        .bind(job_id)
+        .bind(job.tenant_id)
+        .bind(workflow_instance_id)
+        .bind(job.work_item_id)
+        .bind(job.attempt_id)
+        .bind(VERIFY_EVIDENCE)
+        .bind(VERIFY_EVIDENCE_ACTIVITY_CONTRACT_ID)
+        .bind(&verification_payload)
+        .bind(&idempotency_key)
+        .bind(VERIFICATION_JOB_PRIORITY)
+        .bind(VERIFICATION_JOB_MAX_ATTEMPTS)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(|error| {
+            Error::Persistence(format!("enqueue Runmill evidence verification: {error}"))
+        })?;
+        // An existing key is this run's own earlier obligation, which is still
+        // owned by the queue. Adopting it keeps retention idempotent.
+        Ok(inserted)
     }
 }
 
@@ -487,8 +615,10 @@ async fn complete_retention_job(
     job: &ClaimedWorkflowJob,
     payload: &TerminalEvidencePayload,
     outcome: &RunmillTerminalEvidenceOutcome,
+    ingestion: Option<&RunmillEvidenceIngestionOutcome>,
+    verification_job_id: Option<Uuid>,
 ) -> Result<()> {
-    let result = retention_result(payload, outcome)?;
+    let result = retention_result(payload, outcome, ingestion, verification_job_id)?;
     let changed = sqlx::query(
         r"
         UPDATE workflow_jobs
@@ -533,6 +663,8 @@ async fn complete_retention_job(
 fn retention_result(
     payload: &TerminalEvidencePayload,
     outcome: &RunmillTerminalEvidenceOutcome,
+    ingestion: Option<&RunmillEvidenceIngestionOutcome>,
+    verification_job_id: Option<Uuid>,
 ) -> Result<Value> {
     let result = json!({
         "schema": TERMINAL_EVIDENCE_RESULT_SCHEMA_V1,
@@ -547,6 +679,11 @@ fn retention_result(
         "get_run_snapshot_id": payload.get_run_snapshot_id,
         "event_page_snapshot_id": payload.event_page_snapshot_id,
         "terminal_event_seq": payload.terminal_event_seq,
+        "evidence_id": ingestion.map(|ingestion| ingestion.evidence_id),
+        "evidence_ingested": ingestion.is_some_and(|ingestion| ingestion.inserted),
+        "evidence_payload_digest": ingestion.map(|ingestion| ingestion.payload_digest.clone()),
+        "evidence_artifacts_bound": ingestion.map(|ingestion| ingestion.artifacts_bound),
+        "verification_job_id": verification_job_id,
     });
     reject_sensitive_fields(&result)?;
     Ok(result)
@@ -750,7 +887,22 @@ mod tests {
             statement_digest: format!("sha256:{}", "b".repeat(64)),
         };
 
-        let result = retention_result(&payload, &outcome).expect("result carries no secrets");
+        let ingestion = RunmillEvidenceIngestionOutcome {
+            evidence_id: Uuid::now_v7(),
+            inserted: true,
+            payload_digest: format!("sha256:{}", "c".repeat(64)),
+            work_order_digest: payload.work_order_digest.clone(),
+            expectation_digest: format!("sha256:{}", "d".repeat(64)),
+            artifacts_bound: 2,
+        };
+        let verification_job_id = Uuid::now_v7();
+        let result = retention_result(
+            &payload,
+            &outcome,
+            Some(&ingestion),
+            Some(verification_job_id),
+        )
+        .expect("result carries no secrets");
         assert_eq!(result["schema"], json!(TERMINAL_EVIDENCE_RESULT_SCHEMA_V1));
         assert_eq!(result["bundle_id"], json!(payload.bundle_id));
         assert_eq!(result["inserted"], json!(true));
@@ -759,5 +911,25 @@ mod tests {
             json!(outcome.terminal_bundle_digest)
         );
         assert_eq!(result["terminal_event_seq"], json!(10));
+        // The result also names the evidence this retention ingested and the
+        // obligation it created to verify it.
+        assert_eq!(result["evidence_id"], json!(ingestion.evidence_id));
+        assert_eq!(result["evidence_ingested"], json!(true));
+        assert_eq!(result["evidence_artifacts_bound"], json!(2));
+        assert_eq!(result["verification_job_id"], json!(verification_job_id));
+
+        // A deployment with no verifier retains everything and creates no
+        // obligation it cannot serve.
+        let retained_only = retention_result(&payload, &outcome, Some(&ingestion), None)
+            .expect("result carries no secrets");
+        assert_eq!(retained_only["verification_job_id"], Value::Null);
+
+        // A terminal run that never finalized evidence has nothing to ingest
+        // and nothing to verify, and says so rather than inventing either.
+        let unfinalized =
+            retention_result(&payload, &outcome, None, None).expect("result carries no secrets");
+        assert_eq!(unfinalized["evidence_id"], Value::Null);
+        assert_eq!(unfinalized["evidence_ingested"], json!(false));
+        assert_eq!(unfinalized["verification_job_id"], Value::Null);
     }
 }

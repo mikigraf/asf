@@ -13,10 +13,10 @@ use asf::{
     ledger::{PgLedger, PgLedgerOptions},
     ports::ForgeGateway,
     runtime::{
-        CLOSE_SOURCE, EvidenceVerificationHandler, HandlerRegistry, IntakeSyncHandler,
-        LinearSourceClosureHandler, ReactorOptions, ReactorRuntime, RunmillCancellationHandler,
-        RunmillObservationHandler, RunmillTerminalEvidenceHandler,
-        RunmillWorkerReconciliationHandler,
+        CLOSE_SOURCE, EvidenceVerificationHandler, EvidenceVerificationHandoff, HandlerRegistry,
+        IntakeSyncHandler, LinearSourceClosureHandler, ReactorOptions, ReactorRuntime,
+        RunmillCancellationHandler, RunmillObservationHandler, RunmillTerminalEvidenceHandler,
+        RunmillWorkerReconciliationHandler, VERIFY_EVIDENCE,
     },
 };
 use chrono::Utc;
@@ -457,12 +457,23 @@ async fn production_handlers(ledger: &PgLedger, settings: &Settings) -> Result<H
             .context("enable the production Runmill observation activity")?;
         // Retention reads the same private daemon as observation and is scoped
         // to the same worker: a terminal-ready stream on this worker is the
-        // only thing it can ever act on.
+        // only thing it can ever act on. It may create the verification
+        // obligation only where a ready verifier is installed to serve it.
+        let handoff = if handlers
+            .ready_job_types()
+            .iter()
+            .any(|job_type| job_type == VERIFY_EVIDENCE)
+        {
+            EvidenceVerificationHandoff::Enqueue
+        } else {
+            EvidenceVerificationHandoff::RetainOnly
+        };
         let terminal_evidence_handler = RunmillTerminalEvidenceHandler::new(
             ledger.clone(),
             settings.tenant_id,
             runmill.worker_id(),
             client.clone(),
+            handoff,
         )
         .context("construct the tenant-bound Runmill terminal evidence handler")?;
         handlers
