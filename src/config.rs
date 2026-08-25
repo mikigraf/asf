@@ -4,6 +4,7 @@ use std::{
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use url::Url;
 
 use crate::{
     Error, Result,
@@ -11,6 +12,7 @@ use crate::{
         GitHubApiAdapter, LinearApiConfig, LinearAuthentication, LinearTeamMapping,
         RunmillControlClient,
     },
+    artifacts::{S3ArtifactStore, S3ArtifactStoreSettings, S3ServerSideEncryption},
     auth::ApiAuthenticator,
     crypto::Ed25519Signer,
     domain::{RepositoryId, TenantId},
@@ -40,6 +42,18 @@ const RUNMILL_CONTROL_ENV_NAMES: [&str; 5] = [
     "ASF_RUNMILL_WORKER_ID",
 ];
 const MAX_RUNMILL_CONTROL_TIMEOUT_MILLISECONDS: u64 = 60_000;
+/// Artifact storage is an all-or-nothing group: without every value there is no
+/// way to reach a bucket, and a partial group is a deployment mistake rather
+/// than a reason to silently fall back to local disk.
+const ARTIFACT_STORAGE_ENV_NAMES: [&str; 5] = [
+    "ASF_ARTIFACT_S3_ENDPOINT",
+    "ASF_ARTIFACT_S3_REGION",
+    "ASF_ARTIFACT_S3_BUCKET",
+    "ASF_ARTIFACT_S3_ACCESS_KEY_ID",
+    "ASF_ARTIFACT_S3_SECRET_ACCESS_KEY",
+];
+const DEFAULT_ARTIFACT_S3_PREFIX: &str = "sha256";
+const DEFAULT_ARTIFACT_S3_TIMEOUT_MILLISECONDS: u64 = 30_000;
 
 /// Complete controller-side credentials for read-only GitHub observation.
 ///
@@ -47,7 +61,7 @@ const MAX_RUNMILL_CONTROL_TIMEOUT_MILLISECONDS: u64 = 60_000;
 /// trusted ASF process and is never exposed through `Debug`.
 #[derive(Clone)]
 pub struct GitHubObservationSettings {
-    api_base: reqwest::Url,
+    api_base: Url,
     bearer_token: SecretString,
 }
 
@@ -71,7 +85,7 @@ impl GitHubObservationSettings {
     }
 
     #[must_use]
-    pub fn api_base(&self) -> &reqwest::Url {
+    pub fn api_base(&self) -> &Url {
         &self.api_base
     }
 
@@ -269,6 +283,9 @@ pub struct Settings {
     pub github_observation: Option<GitHubObservationSettings>,
     pub linear_intake: Option<LinearIntakeSettings>,
     pub runmill_control: Option<RunmillControlSettings>,
+    /// Production artifact storage. When absent, the development filesystem
+    /// store under `artifact_root` is used instead.
+    pub artifact_storage: Option<S3ArtifactStoreSettings>,
 }
 
 impl fmt::Debug for Settings {
@@ -289,6 +306,7 @@ impl fmt::Debug for Settings {
             .field("github_observation", &self.github_observation)
             .field("linear_intake", &self.linear_intake)
             .field("runmill_control", &self.runmill_control)
+            .field("artifact_storage", &self.artifact_storage)
             .finish()
     }
 }
@@ -317,6 +335,7 @@ impl Settings {
             github_observation: parse_github_observation_settings(env_value)?,
             linear_intake: parse_linear_intake_settings(tenant_id, env_value)?,
             runmill_control: parse_runmill_control_settings(env_value)?,
+            artifact_storage: parse_artifact_storage_settings(env_value)?,
         })
     }
 
@@ -386,7 +405,7 @@ where
     let api_base = values
         .get("ASF_GITHUB_API_BASE")
         .ok_or_else(|| Error::Validation("required ASF_GITHUB_API_BASE is missing".into()))?
-        .parse::<reqwest::Url>()
+        .parse::<Url>()
         .map_err(|error| Error::Validation(format!("invalid ASF_GITHUB_API_BASE: {error}")))?;
     let bearer_token = SecretString::from(
         values
@@ -401,6 +420,95 @@ where
         bearer_token,
     };
     settings.validate()?;
+    Ok(Some(settings))
+}
+
+/// Parse the optional S3-compatible artifact storage group.
+///
+/// Every artifact ASF stores is content-addressed evidence, so the endpoint is
+/// validated the same way the store itself validates it: the group is complete
+/// or absent, and an unusable endpoint is a startup error rather than a runtime
+/// surprise on the first verification.
+fn parse_artifact_storage_settings<F>(mut lookup: F) -> Result<Option<S3ArtifactStoreSettings>>
+where
+    F: FnMut(&str) -> Result<Option<String>>,
+{
+    let mut values = BTreeMap::new();
+    for name in ARTIFACT_STORAGE_ENV_NAMES {
+        if let Some(value) = lookup(name)? {
+            values.insert(name, value);
+        }
+    }
+    if values.is_empty() {
+        return Ok(None);
+    }
+
+    let missing = ARTIFACT_STORAGE_ENV_NAMES
+        .iter()
+        .filter(|name| !values.contains_key(**name))
+        .copied()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(Error::Validation(format!(
+            "artifact storage configuration is partial; missing {}",
+            missing.join(", ")
+        )));
+    }
+
+    let take = |name: &str| {
+        values
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::Validation(format!("required {name} is missing")))
+    };
+    let endpoint = Url::parse(&take("ASF_ARTIFACT_S3_ENDPOINT")?)
+        .map_err(|error| Error::Validation(format!("invalid ASF_ARTIFACT_S3_ENDPOINT: {error}")))?;
+    let timeout_milliseconds = match lookup("ASF_ARTIFACT_S3_TIMEOUT_MILLISECONDS")? {
+        Some(value) => value.parse::<u64>().map_err(|error| {
+            Error::Validation(format!(
+                "invalid ASF_ARTIFACT_S3_TIMEOUT_MILLISECONDS: {error}"
+            ))
+        })?,
+        None => DEFAULT_ARTIFACT_S3_TIMEOUT_MILLISECONDS,
+    };
+    let path_style = match lookup("ASF_ARTIFACT_S3_PATH_STYLE")? {
+        Some(value) => value.parse::<bool>().map_err(|error| {
+            Error::Validation(format!("invalid ASF_ARTIFACT_S3_PATH_STYLE: {error}"))
+        })?,
+        None => true,
+    };
+    let server_side_encryption = match lookup("ASF_ARTIFACT_S3_ENCRYPTION")?.as_deref() {
+        None | Some("bucket-managed") => S3ServerSideEncryption::BucketManaged,
+        Some("aes256") => S3ServerSideEncryption::Aes256,
+        Some("aws-kms") => S3ServerSideEncryption::AwsKms {
+            key_id: lookup("ASF_ARTIFACT_S3_KMS_KEY_ID")?.ok_or_else(|| {
+                Error::Validation(
+                    "ASF_ARTIFACT_S3_ENCRYPTION=aws-kms requires ASF_ARTIFACT_S3_KMS_KEY_ID".into(),
+                )
+            })?,
+        },
+        Some(other) => {
+            return Err(Error::Validation(format!(
+                "invalid ASF_ARTIFACT_S3_ENCRYPTION {other}; expected bucket-managed, aes256, or aws-kms"
+            )));
+        }
+    };
+
+    let settings = S3ArtifactStoreSettings {
+        endpoint,
+        region: take("ASF_ARTIFACT_S3_REGION")?,
+        bucket: take("ASF_ARTIFACT_S3_BUCKET")?,
+        prefix: lookup("ASF_ARTIFACT_S3_PREFIX")?
+            .unwrap_or_else(|| DEFAULT_ARTIFACT_S3_PREFIX.to_owned()),
+        access_key_id: take("ASF_ARTIFACT_S3_ACCESS_KEY_ID")?,
+        secret_access_key: SecretString::from(take("ASF_ARTIFACT_S3_SECRET_ACCESS_KEY")?),
+        path_style,
+        server_side_encryption,
+        timeout: Duration::from_millis(timeout_milliseconds),
+    };
+    // Constructing the store is the validation: a configuration that cannot
+    // build one must fail at startup, not at the first artifact read.
+    S3ArtifactStore::new(settings.clone())?;
     Ok(Some(settings))
 }
 
@@ -660,6 +768,7 @@ mod tests {
             github_observation: None,
             linear_intake: None,
             runmill_control: None,
+            artifact_storage: None,
         }
     }
 
@@ -899,6 +1008,109 @@ mod tests {
         values: &BTreeMap<&'static str, String>,
     ) -> Result<Option<RunmillControlSettings>> {
         parse_runmill_control_settings(|name| Ok(values.get(name).cloned()))
+    }
+
+    fn complete_artifact_storage_values() -> BTreeMap<&'static str, String> {
+        BTreeMap::from([
+            (
+                "ASF_ARTIFACT_S3_ENDPOINT",
+                "https://s3.example.invalid".into(),
+            ),
+            ("ASF_ARTIFACT_S3_REGION", "us-east-1".into()),
+            ("ASF_ARTIFACT_S3_BUCKET", "asf-artifacts".into()),
+            (
+                "ASF_ARTIFACT_S3_ACCESS_KEY_ID",
+                "AKIAIOSFODNN7EXAMPLE".into(),
+            ),
+            (
+                "ASF_ARTIFACT_S3_SECRET_ACCESS_KEY",
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into(),
+            ),
+        ])
+    }
+
+    fn parse_artifact_storage(
+        values: &BTreeMap<&'static str, String>,
+    ) -> Result<Option<S3ArtifactStoreSettings>> {
+        parse_artifact_storage_settings(|name| Ok(values.get(name).cloned()))
+    }
+
+    #[test]
+    fn artifact_storage_configuration_is_optional_atomic_and_redacted() {
+        // Absent means the development filesystem store, which the daemon
+        // announces rather than assuming.
+        assert!(parse_artifact_storage(&BTreeMap::new()).unwrap().is_none());
+
+        let mut partial = complete_artifact_storage_values();
+        partial.remove("ASF_ARTIFACT_S3_BUCKET");
+        let error = parse_artifact_storage(&partial).unwrap_err().to_string();
+        assert!(error.contains("partial"));
+        assert!(error.contains("ASF_ARTIFACT_S3_BUCKET"));
+
+        let configured = parse_artifact_storage(&complete_artifact_storage_values())
+            .unwrap()
+            .unwrap();
+        assert_eq!(configured.bucket, "asf-artifacts");
+        assert_eq!(configured.prefix, "sha256");
+        assert!(configured.path_style);
+        assert_eq!(configured.timeout, Duration::from_secs(30));
+        assert_eq!(
+            configured.server_side_encryption,
+            S3ServerSideEncryption::BucketManaged
+        );
+        let debug = format!("{configured:?}");
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains("wJalrXUtnFEMI"));
+        assert!(!debug.contains("AKIAIOSFODNN7EXAMPLE"));
+    }
+
+    #[test]
+    fn artifact_storage_refuses_a_configuration_it_could_not_use() {
+        // A plaintext endpoint outside loopback would put evidence bytes and a
+        // signed credential on the wire in the clear.
+        let mut plaintext = complete_artifact_storage_values();
+        plaintext.insert(
+            "ASF_ARTIFACT_S3_ENDPOINT",
+            "http://s3.example.invalid".into(),
+        );
+        assert!(parse_artifact_storage(&plaintext).is_err());
+
+        let mut malformed = complete_artifact_storage_values();
+        malformed.insert("ASF_ARTIFACT_S3_ENDPOINT", "not a url".into());
+        assert!(parse_artifact_storage(&malformed).is_err());
+
+        let mut bucket = complete_artifact_storage_values();
+        bucket.insert("ASF_ARTIFACT_S3_BUCKET", "Not-A-Bucket".into());
+        assert!(parse_artifact_storage(&bucket).is_err());
+
+        let mut encryption = complete_artifact_storage_values();
+        encryption.insert("ASF_ARTIFACT_S3_ENCRYPTION", "rot13".into());
+        assert!(parse_artifact_storage(&encryption).is_err());
+
+        // KMS encryption without a key names no key at all.
+        let mut kms = complete_artifact_storage_values();
+        kms.insert("ASF_ARTIFACT_S3_ENCRYPTION", "aws-kms".into());
+        assert!(parse_artifact_storage(&kms).is_err());
+        kms.insert("ASF_ARTIFACT_S3_KMS_KEY_ID", "arn:aws:kms:key/1".into());
+        assert_eq!(
+            parse_artifact_storage(&kms)
+                .unwrap()
+                .unwrap()
+                .server_side_encryption,
+            S3ServerSideEncryption::AwsKms {
+                key_id: "arn:aws:kms:key/1".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_local_minio_endpoint_is_usable_for_development() {
+        let mut local = complete_artifact_storage_values();
+        local.insert("ASF_ARTIFACT_S3_ENDPOINT", "http://127.0.0.1:9000".into());
+        local.insert("ASF_ARTIFACT_S3_PATH_STYLE", "true".into());
+        let configured = parse_artifact_storage(&local).unwrap().unwrap();
+        assert_eq!(configured.endpoint.port(), Some(9000));
+        assert!(configured.path_style);
     }
 
     #[test]

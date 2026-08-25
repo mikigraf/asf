@@ -4,7 +4,7 @@ use anyhow::{Context as _, Result, bail};
 use asf::{
     adapters::LinearApiAdapter,
     api::{ApiState, PostgresApiBackend, router},
-    artifacts::FileArtifactStore,
+    artifacts::{ArtifactStore, FileArtifactStore, S3ArtifactStore},
     audit::{AuditEventContent, HashedAuditEvent},
     auth::ApiAuthenticator,
     config::{LinearIntakeSettings, Settings},
@@ -387,11 +387,9 @@ async fn production_handlers(ledger: &PgLedger, settings: &Settings) -> Result<H
         source_closure_ready,
     ) {
         (Some(gateway), Some(github), true) => {
-            let artifacts = Arc::new(
-                FileArtifactStore::open(settings.artifact_root.clone())
-                    .await
-                    .context("open the content-addressed evidence artifact store")?,
-            );
+            let artifacts = artifact_store(settings)
+                .await
+                .context("open the content-addressed evidence artifact store")?;
             let work_order_signer = Ed25519Signer::from_base64_seed(
                 settings.signing_key_id.clone(),
                 settings.signing_seed_base64.expose_secret(),
@@ -501,6 +499,33 @@ async fn production_handlers(ledger: &PgLedger, settings: &Settings) -> Result<H
         );
     }
     Ok(handlers)
+}
+
+/// Open the artifact store this deployment is configured for.
+///
+/// Evidence artifacts are the bytes an independent verifier re-reads, so
+/// production stores them on a configured S3-compatible endpoint. The
+/// filesystem store remains for development and is announced as such: an
+/// operator should never have to guess which one is holding their evidence.
+async fn artifact_store(settings: &Settings) -> Result<Arc<dyn ArtifactStore>> {
+    let Some(storage) = &settings.artifact_storage else {
+        warn!(
+            artifact_root = %settings.artifact_root.display(),
+            "production artifact storage is absent; using the development filesystem store"
+        );
+        return Ok(Arc::new(
+            FileArtifactStore::open(settings.artifact_root.clone()).await?,
+        ));
+    };
+    let store = S3ArtifactStore::new(storage.clone())
+        .context("construct the S3-compatible artifact store")?;
+    info!(
+        bucket = %storage.bucket,
+        region = %storage.region,
+        endpoint = %storage.endpoint,
+        "production content-addressed artifact storage is configured"
+    );
+    Ok(Arc::new(store))
 }
 
 fn configured_forge_gateway(settings: &Settings) -> Result<Option<Arc<dyn ForgeGateway>>> {
