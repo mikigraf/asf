@@ -41,6 +41,13 @@ enum Command {
     Migrate,
     /// Run the API and durable-control-plane supervisors.
     All,
+    /// Prove the configured artifact store can hold and return evidence.
+    ///
+    /// Writes one small probe object and reads it back. Evidence artifacts are
+    /// the bytes an independent verifier re-reads, so a deployment should
+    /// establish that its storage works before it depends on it rather than
+    /// discovering otherwise during the first verification.
+    CheckArtifactStorage,
 }
 
 enum FirstExit {
@@ -64,6 +71,11 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<()> {
     let settings = Settings::from_env().context("load ASF configuration")?;
     settings.validate().context("validate ASF configuration")?;
+    // Storage is provable without the ledger, and an operator checking their
+    // bucket should not need a reachable database to do it.
+    if matches!(cli.command, Command::CheckArtifactStorage) {
+        return check_artifact_storage(&settings).await;
+    }
     let ledger = connect(&settings).await?;
 
     match cli.command {
@@ -75,7 +87,45 @@ async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::All => run_all(ledger, settings).await,
+        Command::CheckArtifactStorage => unreachable!("storage checks run before the ledger"),
     }
+}
+
+/// Write one probe artifact and read it back through the configured store.
+///
+/// The probe is unique per run, so it never depends on an object an earlier
+/// check left behind, and it is content-addressed like every other artifact.
+async fn check_artifact_storage(settings: &Settings) -> Result<()> {
+    let store = artifact_store(settings).await?;
+    let probe = format!(
+        "asf-artifact-storage-probe {} {}",
+        settings.tenant_id,
+        Utc::now().to_rfc3339()
+    );
+
+    let stored = store
+        .put(
+            probe.as_bytes(),
+            "text/plain",
+            "asf-server:check-artifact-storage",
+            "portable",
+        )
+        .await
+        .context("write the artifact storage probe")?;
+    let read = store
+        .get(&stored.digest)
+        .await
+        .context("read the artifact storage probe back")?;
+    if read != probe.as_bytes() {
+        bail!("artifact storage returned different bytes than it was given");
+    }
+
+    info!(
+        digest = %stored.digest,
+        size = stored.size,
+        "artifact storage accepted and returned the probe"
+    );
+    Ok(())
 }
 
 async fn connect(settings: &Settings) -> Result<PgLedger> {
@@ -678,6 +728,12 @@ mod tests {
                 .expect("all command must parse")
                 .command,
             Command::All
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["asf-server", "check-artifact-storage"])
+                .expect("artifact storage check must parse")
+                .command,
+            Command::CheckArtifactStorage
         ));
     }
 }

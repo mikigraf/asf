@@ -98,6 +98,14 @@ Storage is content-addressed: one object per SHA-256 digest under the configured
 
 Leaving the group unset keeps the development filesystem store under `ASF_ARTIFACT_ROOT`. The daemon warns when it does so; that store is not suitable for production, where evidence must outlive any single host.
 
+Prove the configuration before depending on it:
+
+```sh
+target/debug/asf-server check-artifact-storage
+```
+
+It writes one small probe object through the configured store and reads it back, so a wrong bucket, an expired credential, a refused encryption policy, or an endpoint that returns something other than what it was given fails here rather than during the first verification. It needs no database. Against a local MinIO from `docker-compose.yml`, point `ASF_ARTIFACT_S3_ENDPOINT` at `http://127.0.0.1:9000`, create the bucket, and run the same command.
+
 Worker reconciliation is deliberately non-authoritative. It never creates a worker, generation, capability set, concurrency limit, or session. A ready Runmill report promotes the row to `READY` only when its reported concurrency matches the stored limit, the stored capabilities pass ASF's production predicate, and a live same-generation session already exists. A missing session leaves the row `REGISTERED`; degraded/refusing health drains or offlines it. Unsafe control metadata, incompatible/malformed protocol facts, concurrency mismatch, or unqualified capabilities quarantine it and revoke active sessions. Health cannot automatically unquarantine a worker. The exact job claim, worker version/generation check, state update, audit append, session revocation, and job completion are transactionally fenced. This projection still does not establish attempt-specific ctxlane leases or dispatch readiness.
 
 PostgreSQL prevents update or deletion of the cancellation effect's identity, binding, idempotency/correlation values, request digest, and payload. Every `IN_FLIGHT` cancellation stores the exact owning workflow-job UUID as well as its owner and fence. If preflight acknowledgement is lost, a later claim may adopt only after that exact recorded job is no longer an unexpired matching `RUNNING` claim; another job with the same reactor owner and per-row fence cannot impersonate it. The effect lease is a diagnostic snapshot, not the ownership oracle.
