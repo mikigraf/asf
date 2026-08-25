@@ -5,6 +5,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
+mod s3;
+mod sigv4;
+
+pub use s3::{S3ArtifactStore, S3ArtifactStoreSettings, S3ServerSideEncryption};
+
 use crate::{Error, Result, crypto::sha256_digest};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
